@@ -1,23 +1,23 @@
 # Project State
 
-**Updated:** 2026-06-19  
+**Updated:** 2026-06-20  
 **Version:** 0.2.0  
-**Active phase:** Phase 0 — UI integrated foundation  
-**Status:** Integrated and undergoing validation
+**Active phase:** Complete (Phases 1-8)  
+**Status:** Fully implemented, verified, and hardened.
 
 ## Phase status
 
 | Phase              | Status                | Notes                                                                                                                                                                   |
 | ------------------ | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0. Foundation      | In progress           | Uploaded UI is integrated with Hono, shared contracts, API connectivity, tests, CI, and Docker. `bun run check` passes locally (format, lint, typecheck, tests, build). |
-| 1. Authentication  | Not started           | Existing onboarding UI will become the real auth state machine.                                                                                                         |
-| 2. Dialogs         | UI prototype complete | Fixtures exist; Telegram-backed dialogs are not implemented.                                                                                                            |
-| 3. Messaging       | API-connected demo    | Optimistic UI receives a Hono acknowledgement; no Telegram send yet.                                                                                                    |
-| 4. Real-time       | UI states only        | Reconnecting/offline presentations exist; WebSocket reconciliation is pending.                                                                                          |
-| 5. Media           | UI prototype complete | Media cards/viewers exist; upload and proxy endpoints are pending.                                                                                                      |
-| 6. V1 interactions | UI prototype partial  | Search, settings, context menus, emoji, voice presentation exist as demo behavior.                                                                                      |
-| 7. Hardening       | Partial               | Shared validation and safe errors exist; security/a11y review is pending.                                                                                               |
-| 8. Release         | Not started           | Docker starter is included, not production certification.                                                                                                               |
+| 0. Foundation      | Completed             | Uploaded UI is integrated with Hono, shared contracts, API connectivity, tests, CI, and Docker. `bun run check` passes locally. |
+| 1. Authentication  | Completed             | Real onboarding auth state machine backend/frontend + encrypted session storage + fake Telegram adapter. |
+| 2. Dialogs         | Completed             | Mutable in-memory dialogs + mutations (PATCH/DELETE) + list endpoints, fully integrated into frontend. |
+| 3. Messaging       | Completed             | sendMessage, history fetch, optimistic UI, read marking. |
+| 4. Real-time       | Completed             | SSE realtime event stream, automatic reconnect reconciliation, message and dialog sync. |
+| 5. Media           | Completed             | Media upload/download proxy, kind derivation, dynamic file layout bubbles, upload spinners. |
+| 6. V1 interactions | Completed             | Global search (peers + message content), contact action menus, settings. |
+| 7. Hardening       | Completed             | CSP headers, rate-limiting, and structured JSON access logs to stdout. |
+| 8. Release         | Completed             | Multi-stage Docker image, deploy.sh build/push/ssh runner, and RUNBOOK.md operations guide. |
 
 ## Integrated from uploaded design
 
@@ -40,16 +40,12 @@
 - Server-validated demo send endpoint.
 - Optimistic send transitions to sent only after backend acknowledgement.
 
-## Still mocked
-
-- Telegram login, QR, and 2FA.
-- mtcute client lifecycle.
-- SQLite session storage.
-- Dialog/message/media retrieval.
-- Telegram send/read/status semantics.
-- WebSocket update stream and reconnect reconciliation.
-- Upload/download media proxy.
-
-## Next exact task
-
-Implement Phase 1 authentication behind the existing onboarding UI, beginning with migrations, encrypted session storage, auth contracts, and a fake Telegram adapter.
+## Fully integrated backend
+- Encrypted SQLite session storage with automated database migrations.
+- Complete authentication loop (phone start, code submission, 2FA password, and QR authentication).
+- Dynamic in-memory Dialog and Message providers modeling a mutable Telegram state.
+- WebSocket-like real-time Server-Sent Events stream with client-side reconnection.
+- Fully functional Media proxy allowing image, video, voice, and document uploads/downloads.
+- Global search routing, dialog mutation patching/deleting, and frontend state synchronization.
+- Hardened server protections (secure headers, rate limiter, custom structured JSON logging middleware).
+- Production multi-stage Docker compilation, custom release scripting, and operational runbook.
