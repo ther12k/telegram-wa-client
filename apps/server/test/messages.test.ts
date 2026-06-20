@@ -50,6 +50,44 @@ describe('messages API', () => {
     expect(body.data.clientOperationId).toBe('op-test-12345')
   })
 
+  it('sends a media message and persists the media metadata', async () => {
+    await signIn()
+    const res = await app.request('/api/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chatId: 'alice',
+        text: '',
+        clientOperationId: 'op-media-test-1',
+        mediaId: '00000000-0000-0000-0000-000000000001',
+        mediaMime: 'image/png',
+        mediaName: 'avatar.png',
+        mediaSize: 4096,
+      }),
+    })
+    const body = await res.json()
+    expect(res.status).toBe(201)
+    expect(body.data.kind).toBe('image')
+    expect(body.data.mediaId).toBe('00000000-0000-0000-0000-000000000001')
+    expect(body.data.mediaMime).toBe('image/png')
+    expect(body.data.mediaName).toBe('avatar.png')
+    expect(body.data.mediaSize).toBe(4096)
+  })
+
+  it('rejects payload without text or mediaId', async () => {
+    await signIn()
+    const res = await app.request('/api/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chatId: 'alice',
+        text: '   ',
+        clientOperationId: 'op-blank-media',
+      }),
+    })
+    expect(res.status).toBe(422)
+  })
+
   it('rejects invalid send payloads with 422', async () => {
     await signIn()
     const res = await app.request('/api/messages', {

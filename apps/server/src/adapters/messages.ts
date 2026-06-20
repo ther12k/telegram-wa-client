@@ -121,6 +121,17 @@ export class InMemoryMessageProvider implements MessageProvider {
     }
 
     const nowIso = new Date().toISOString()
+    const kind: Message['kind'] = input.mediaId
+      ? input.mediaMime?.startsWith('image/')
+        ? 'image'
+        : input.mediaMime?.startsWith('video/')
+          ? 'video'
+          : input.mediaMime?.startsWith('audio/')
+            ? 'voice'
+            : 'document'
+      : input.replyTo
+        ? 'reply'
+        : 'text'
     const stored: Message = {
       id: `srv-${crypto.randomUUID()}`,
       chatId: input.chatId,
@@ -129,9 +140,14 @@ export class InMemoryMessageProvider implements MessageProvider {
       text: input.text,
       sentAt: nowIso,
       status: 'sent',
-      kind: input.replyTo ? 'reply' : 'text',
+      kind,
       ...(input.replyTo ? { replyTo: input.replyTo } : {}),
       clientOperationId: input.clientOperationId,
+      ...(input.mediaId ? { mediaId: input.mediaId } : {}),
+      ...(input.mediaMime ? { mediaMime: input.mediaMime } : {}),
+      ...(input.mediaName ? { mediaName: input.mediaName } : {}),
+      ...(input.mediaSize ? { mediaSize: input.mediaSize } : {}),
+      ...(input.mediaDuration ? { mediaDuration: input.mediaDuration } : {}),
     }
 
     const history = this.seedHistory(input.chatId)

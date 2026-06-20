@@ -3,6 +3,7 @@ import type {
   DemoMessageAck,
   DemoSendInput,
   DialogList,
+  MediaMeta,
   Message,
   MessageHistory,
   ProjectState,
@@ -21,9 +22,13 @@ type Failure = {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (!(init?.body instanceof FormData)) {
+    headers['content-type'] = 'application/json'
+  }
   const response = await fetch(path, {
     ...init,
-    headers: { 'content-type': 'application/json', ...init?.headers },
+    headers: { ...headers, ...init?.headers },
   })
   const body = (await response.json()) as Success<T> | Failure
   if (!response.ok || body.success === false) {
@@ -84,6 +89,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+  uploadMedia: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    // Hono expects multi-part boundary, which browser sets automatically when content-type header is omitted.
+    return request<MediaMeta>('/api/media', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+    })
+  },
   markRead: (chatId: string) =>
     request<{ chatId: string; marked: boolean }>(
       `/api/messages/${encodeURIComponent(chatId)}/read`,

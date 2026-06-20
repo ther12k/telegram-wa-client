@@ -137,12 +137,21 @@ export const messageHistorySchema = z.object({
   hasMore: z.boolean(),
 })
 
-export const sendMessageSchema = z.object({
-  chatId: z.string().min(1),
-  text: z.string().trim().min(1).max(4096),
-  clientOperationId: z.string().min(8).max(128),
-  replyTo: z.string().optional(),
-})
+export const sendMessageSchema = z
+  .object({
+    chatId: z.string().min(1),
+    text: z.string().trim().max(4096).default(''),
+    clientOperationId: z.string().min(8).max(128),
+    replyTo: z.string().optional(),
+    mediaId: z.string().optional(),
+    mediaMime: z.string().optional(),
+    mediaName: z.string().optional(),
+    mediaSize: z.number().int().nonnegative().optional(),
+    mediaDuration: z.number().nonnegative().optional(),
+  })
+  .refine((v) => v.text.length > 0 || !!v.mediaId, {
+    message: 'Either text or mediaId must be provided',
+  })
 
 // Real-time Schemas
 export const realtimeEventSchema = z.discriminatedUnion('type', [
@@ -192,3 +201,4 @@ export type DialogList = z.infer<typeof dialogListSchema>
 export type Message = z.infer<typeof messageSchema>
 export type MessageHistory = z.infer<typeof messageHistorySchema>
 export type SendMessageInput = z.infer<typeof sendMessageSchema>
+export type MediaMeta = z.infer<typeof mediaMetaSchema>

@@ -119,6 +119,14 @@ function messageToFrontend(m: BackendMessage): Message {
     time: isoToTimeLabel(m.sentAt),
     status: m.status === 'sending' ? 'sending' : m.status === 'failed' ? 'failed' : 'sent',
     ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+    mediaUrl: m.mediaId ? `/api/media/${m.mediaId}` : undefined,
+    mediaId: m.mediaId,
+    mediaMime: m.mediaMime,
+    mediaName: m.mediaName,
+    mediaSize: m.mediaSize,
+    mediaDuration: m.mediaDuration,
+    fileName: m.mediaName,
+    fileSize: m.mediaSize ? `${Math.round(m.mediaSize / 1024)} KB` : undefined,
   }
 }
 
@@ -147,6 +155,8 @@ export default function Messenger({
   const [menu, setMenu] = useState<{ x: number; y: number; chatId: string } | null>(null)
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
 
   // Load real dialogs from the backend, with fallback to fixtures on failure.
   useEffect(() => {
@@ -315,6 +325,90 @@ export default function Messenger({
     } catch {
       updateStatus(id, 'failed', currentChatId)
     }
+  }
+
+  const sendMediaMessage = async (file: File) => {
+    if (!selectedChat) return
+    const currentChatId = selectedChat.id
+    const opId = `op-${crypto.randomUUID()}`
+    setUploading(true)
+    setShowAttach(false)
+
+    // Determine display kind from mime
+    const mime = file.type.toLowerCase()
+    let displayKind: Message['kind'] = 'document'
+    if (mime.startsWith('image/')) displayKind = 'image'
+    else if (mime.startsWith('video/')) displayKind = 'video'
+    else if (mime.startsWith('audio/')) displayKind = 'voice'
+
+    // Optimistic placeholder
+    const optimistic: Message = {
+      id: opId,
+      kind: displayKind,
+      text: '',
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'sending',
+      mediaName: file.name,
+      mediaMime: file.type,
+      mediaSize: file.size,
+      fileName: file.name,
+      fileSize: `${Math.round(file.size / 1024)} KB`,
+    }
+    setChats((prev) =>
+      prev.map((c) =>
+        c.id === currentChatId
+          ? {
+              ...c,
+              messages: [...c.messages, optimistic],
+              subtitle: `You: ${file.name}`,
+              time: 'now',
+            }
+          : c,
+      ),
+    )
+
+    try {
+      const meta = await api.uploadMedia(file)
+      const ack = await api.sendMessage({
+        chatId: currentChatId,
+        text: '',
+        clientOperationId: opId,
+        mediaId: meta.id,
+        mediaMime: meta.mime,
+        mediaName: meta.name,
+        mediaSize: meta.size,
+      })
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === currentChatId
+            ? {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.id === opId
+                    ? {
+                        ...m,
+                        id: ack.id,
+                        status: 'sent' as const,
+                        mediaId: ack.mediaId,
+                        mediaUrl: ack.mediaId ? `/api/media/${ack.mediaId}` : undefined,
+                      }
+                    : m,
+                ),
+              }
+            : c,
+        ),
+      )
+    } catch {
+      updateStatus(opId, 'failed', currentChatId)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) sendMediaMessage(file)
+    e.target.value = ''
   }
 
   const updateStatus = (
@@ -556,6 +650,7 @@ export default function Messenger({
             setReplyTo={setReplyTo}
             scrollRef={scrollRef}
             onMediaClick={(url) => setMediaUrl(url)}
+            onPickFile={() => fileInputRef.current?.click()}
           />
         ) : (
           <EmptyConversation />
@@ -611,6 +706,23 @@ export default function Messenger({
 
       {/* Media viewer */}
       {mediaUrl && <MediaViewer url={mediaUrl} onClose={() => setMediaUrl(null)} />}
+
+      {/* Hidden file input for attachment uploads */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={onFilePicked}
+        accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.txt,.zip"
+      />
+
+      {/* Upload overlay */}
+      {uploading && (
+        <div className="fixed bottom-20 right-8 z-50 px-4 py-2 rounded-xl bg-slate-900/80 text-white text-xs font-medium shadow-lg flex items-center gap-2">
+          <div className="h-3 w-3 rounded-full border-2 border-white border-t-transparent animate-spin" />
+          Uploading…
+        </div>
+      )}
 
       {/* Context menu */}
       {menu && (
@@ -713,6 +825,7 @@ function Conversation({
   setReplyTo,
   scrollRef,
   onMediaClick,
+  onPickFile,
 }: {
   chat: Chat
   dark: boolean
@@ -731,6 +844,7 @@ function Conversation({
   setReplyTo: (m: Message) => void
   scrollRef: React.RefObject<HTMLDivElement | null>
   onMediaClick: (url: string) => void
+  onPickFile: () => void
 }) {
   return (
     <>
@@ -829,16 +943,46 @@ function Conversation({
           <div className="absolute bottom-full left-10 mb-2 z-20 bg-white dark:bg-[#233138] rounded-2xl shadow-2xl ring-1 ring-slate-200 dark:ring-white/10 p-2 animate-fade-in">
             <div className="grid grid-cols-3 gap-2">
               {[
-                { icon: ImageIcon, label: 'Photos', color: 'bg-violet-500' },
-                { icon: Camera, label: 'Camera', color: 'bg-rose-500' },
-                { icon: FileIcon, label: 'Document', color: 'bg-indigo-500' },
-                { icon: UserPlus, label: 'Contact', color: 'bg-sky-500' },
-                { icon: Hash, label: 'Poll', color: 'bg-amber-500' },
-                { icon: Archive, label: 'Location', color: 'bg-emerald-500' },
+                {
+                  icon: ImageIcon,
+                  label: 'Photos',
+                  color: 'bg-violet-500',
+                  onClick: () => onPickFile(),
+                },
+                {
+                  icon: Camera,
+                  label: 'Camera',
+                  color: 'bg-rose-500',
+                  onClick: () => onPickFile(),
+                },
+                {
+                  icon: FileIcon,
+                  label: 'Document',
+                  color: 'bg-indigo-500',
+                  onClick: () => onPickFile(),
+                },
+                {
+                  icon: UserPlus,
+                  label: 'Contact',
+                  color: 'bg-sky-500',
+                  onClick: () => setShowAttach(false),
+                },
+                {
+                  icon: Hash,
+                  label: 'Poll',
+                  color: 'bg-amber-500',
+                  onClick: () => setShowAttach(false),
+                },
+                {
+                  icon: Archive,
+                  label: 'Location',
+                  color: 'bg-emerald-500',
+                  onClick: () => setShowAttach(false),
+                },
               ].map((a) => (
                 <button
                   key={a.label}
-                  onClick={() => setShowAttach(false)}
+                  onClick={a.onClick}
                   className="flex flex-col items-center gap-1.5 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-[#1f2c33] transition"
                 >
                   <div
@@ -997,20 +1141,28 @@ function MessageBubble({
           </div>
         )}
 
-        {message.kind === 'image' && message.mediaUrl && (
+        {message.kind === 'image' && (message.mediaUrl || message.mediaId) && (
           <button
-            onClick={() => onMediaClick(message.mediaUrl!)}
+            onClick={() => onMediaClick(message.mediaUrl || `/api/media/${message.mediaId}`)}
             className="block mb-1 -mx-1 -mt-1 rounded-xl overflow-hidden"
           >
-            <img src={message.mediaUrl} alt="media" className="w-full max-h-72 object-cover" />
+            <img
+              src={message.mediaUrl || `/api/media/${message.mediaId}`}
+              alt="media"
+              className="w-full max-h-72 object-cover"
+            />
           </button>
         )}
-        {message.kind === 'video' && message.mediaUrl && (
+        {message.kind === 'video' && (message.mediaUrl || message.mediaId) && (
           <button
-            onClick={() => onMediaClick(message.mediaUrl!)}
+            onClick={() => onMediaClick(message.mediaUrl || `/api/media/${message.mediaId}`)}
             className="relative block mb-1 -mx-1 -mt-1 rounded-xl overflow-hidden"
           >
-            <img src={message.mediaUrl} alt="video" className="w-full max-h-72 object-cover" />
+            <img
+              src={message.mediaUrl || `/api/media/${message.mediaId}`}
+              alt="video"
+              className="w-full max-h-72 object-cover"
+            />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="h-12 w-12 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
                 <Play className="h-5 w-5 text-white ml-0.5" />
@@ -1025,20 +1177,58 @@ function MessageBubble({
         )}
         {message.kind === 'document' && (
           <div className="flex items-center gap-3 bg-white/40 dark:bg-white/5 rounded-xl p-2.5 mb-1 -mt-0.5">
-            <div className="h-10 w-10 rounded-lg bg-rose-500 flex items-center justify-center text-white">
+            <a
+              href={message.mediaId ? `/api/media/${message.mediaId}` : '#'}
+              download={message.fileName || 'document'}
+              className="h-10 w-10 rounded-lg bg-rose-500 flex items-center justify-center text-white shrink-0 hover:bg-rose-600 transition"
+            >
               <FileText className="h-4 w-4" />
-            </div>
+            </a>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium truncate">{message.fileName}</div>
+              {message.mediaId ? (
+                <a
+                  href={`/api/media/${message.mediaId}`}
+                  download={message.fileName || 'document'}
+                  className="text-sm font-medium hover:underline block truncate"
+                >
+                  {message.fileName || 'Unnamed File'}
+                </a>
+              ) : (
+                <div className="text-sm font-medium truncate">{message.fileName}</div>
+              )}
               <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                {message.fileSize} · PDF
+                {message.fileSize ||
+                  (message.mediaSize
+                    ? `${Math.round(message.mediaSize / 1024)} KB`
+                    : 'Unknown size')}{' '}
+                · {message.mediaMime?.split('/')[1]?.toUpperCase() || 'DOCUMENT'}
               </div>
             </div>
           </div>
         )}
         {message.kind === 'voice' && (
           <div className="flex items-center gap-2.5 py-1 min-w-[220px]">
-            <button className="h-8 w-8 rounded-full bg-brand-500 text-white flex items-center justify-center shrink-0">
+            {message.mediaId ? (
+              <audio
+                src={`/api/media/${message.mediaId}`}
+                className="hidden"
+                id={`audio-${message.id}`}
+              />
+            ) : null}
+            <button
+              onClick={() => {
+                if (message.mediaId) {
+                  const el = document.getElementById(
+                    `audio-${message.id}`,
+                  ) as HTMLAudioElement | null
+                  if (el) {
+                    if (el.paused) el.play()
+                    else el.pause()
+                  }
+                }
+              }}
+              className="h-8 w-8 rounded-full bg-brand-500 text-white flex items-center justify-center shrink-0 hover:bg-brand-600 transition"
+            >
               <Play className="h-3.5 w-3.5 ml-0.5" />
             </button>
             <div className="flex-1 flex items-center gap-0.5">
@@ -1050,7 +1240,10 @@ function MessageBubble({
                 />
               ))}
             </div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400">{message.duration}</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">
+              {message.duration ||
+                (message.mediaDuration ? `${Math.round(message.mediaDuration)}s` : '0:05')}
+            </div>
           </div>
         )}
         {(message.kind === 'text' || message.kind === 'reply') && (

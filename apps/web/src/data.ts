@@ -9,6 +9,11 @@ export type Message = {
   status?: 'sending' | 'sent' | 'read' | 'failed'
   replyTo?: string // id of quoted message
   mediaUrl?: string
+  mediaId?: string
+  mediaMime?: string
+  mediaName?: string
+  mediaSize?: number
+  mediaDuration?: number
   fileName?: string
   fileSize?: string
   duration?: string // for voice/video

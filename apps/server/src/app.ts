@@ -8,6 +8,7 @@ import { InMemoryMessageProvider } from './adapters/messages'
 import { createAuthRouter } from './routes/auth'
 import { createDialogRouter } from './routes/dialogs'
 import { createMessagesRouter } from './routes/messages'
+import { createMediaRouter, InMemoryMediaStore } from './routes/media'
 import { RealtimeBus } from './realtime/bus'
 import { createRealtimeRouter } from './routes/realtime'
 
@@ -17,6 +18,7 @@ export const app = new Hono<Bindings>()
 export const telegramAdapter = new FakeTelegramAdapter()
 export const dialogProvider = new FixtureDialogProvider()
 export const messageProvider = new InMemoryMessageProvider()
+export const mediaStore = new InMemoryMediaStore()
 export const realtimeBus = new RealtimeBus()
 
 const isAuthenticated = async () =>
@@ -44,6 +46,7 @@ app.use('/api/*', cors({ origin: ['http://localhost:5173'], credentials: true })
 app.route('/api/auth', createAuthRouter(telegramAdapter))
 app.route('/api/dialogs', createDialogRouter(dialogProvider, isAuthenticated))
 app.route('/api/messages', createMessagesRouter(messageProvider, isAuthenticated))
+app.route('/api/media', createMediaRouter(mediaStore, isAuthenticated))
 app.route('/api/realtime', createRealtimeRouter(realtimeBus, isAuthenticated))
 
 const ok = <T>(c: Context<Bindings>, data: T, status: 200 | 201 = 200) =>
