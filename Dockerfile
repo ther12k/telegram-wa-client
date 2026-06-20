@@ -13,8 +13,7 @@ RUN bun install --frozen-lockfile || bun install
 # Build all workspaces
 COPY . .
 RUN bun run --filter '@telewa/web' build
-RUN bun --cwd apps/server run build
-
+RUN bun run --filter '@telewa/server' build
 # ─── Runtime stage ──────────────────────────────────────────────────────────────
 FROM oven/bun:1.3.14 AS runtime
 WORKDIR /app
