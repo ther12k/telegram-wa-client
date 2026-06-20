@@ -44,4 +44,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD bun -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["bun", "--cwd", "apps/server", "run", "start"]
+CMD ["bun", "run", "--filter", "@telewa/server", "start"] 
