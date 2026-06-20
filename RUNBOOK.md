@@ -65,19 +65,19 @@ ssh "$SSH_HOST" "docker run -d --name telewa -p 3001:3001 --restart unless-stopp
 
 ### Build args (already wired into Dockerfile)
 
-| arg          | default   | purpose                       |
-| ------------ | --------- | ----------------------------- |
-| `APP_VERSION`| `dev`     | version stamped into `APP_VERSION` env var |
-| `APP_COMMIT` | `unknown` | commit sha stamped into `APP_COMMIT` env var |
+| arg           | default   | purpose                                      |
+| ------------- | --------- | -------------------------------------------- |
+| `APP_VERSION` | `dev`     | version stamped into `APP_VERSION` env var   |
+| `APP_COMMIT`  | `unknown` | commit sha stamped into `APP_COMMIT` env var |
 
 ---
 
 ## 3. Health checks
 
-| Endpoint         | Returns                                | Use for              |
-| ---------------- | -------------------------------------- | -------------------- |
-| `/health/live`   | `{ status: "live", timestamp }`        | process liveness     |
-| `/health/ready`  | `{ status: "ready", database, runtime }` | readiness probe    |
+| Endpoint        | Returns                                  | Use for          |
+| --------------- | ---------------------------------------- | ---------------- |
+| `/health/live`  | `{ status: "live", timestamp }`          | process liveness |
+| `/health/ready` | `{ status: "ready", database, runtime }` | readiness probe  |
 
 The container's `HEALTHCHECK` pings `/health/live` every 30s.
 
@@ -95,7 +95,15 @@ curl -fsS http://localhost:3001/health/ready
 Every request emits a single JSON line to stdout:
 
 ```json
-{"timestamp":"2026-06-20T05:44:00.111Z","requestId":"a704afd1-abf6-423b-9a03-945e8b556efb","method":"GET","url":"http://localhost/api/auth/state","status":200,"durationMs":2.58,"ip":"127.0.0.1"}
+{
+  "timestamp": "2026-06-20T05:44:00.111Z",
+  "requestId": "a704afd1-abf6-423b-9a03-945e8b556efb",
+  "method": "GET",
+  "url": "http://localhost/api/auth/state",
+  "status": 200,
+  "durationMs": 2.58,
+  "ip": "127.0.0.1"
+}
 ```
 
 Pipe stdout into your log collector (Loki, Datadog, journald). Filter on `status >= 400` for errors or `durationMs > 250` for slow requests.
@@ -130,14 +138,14 @@ Restart the container — the bucket map lives in process memory.
 
 ## 6. Troubleshooting
 
-| Symptom                                     | Likely cause                        | Fix                                                              |
-| ------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------- |
-| `429 RATE_LIMIT_EXCEEDED` everywhere        | Legitimate burst / shared egress IP | Lower `maxRequests` only if needed; raise per-IP for load tests  |
-| `AUTH_REQUIRED` on every request            | Container restarted — session gone  | Re-run phone/code flow (sessions are in-memory)                  |
-| `CSP` blocks frontend assets in dev         | Local Vite uses unsafe-inline HMR   | Use `bun run dev` (separate CSP-disabled profile) not the container |
-| `Cannot find module '@telewa/contracts'`    | Build cache stale                   | `docker build --no-cache -t telewa:test .`                       |
-| `bun --cwd apps/server run start` exits 1   | Missing `dist/` (build skipped)     | Re-run `bun run build` before `docker build`                     |
-| Frontend 404s on `/api/*`                   | Reverse proxy not forwarding path   | Proxy: `location /api/ { proxy_pass http://telewa:3001; }`       |
+| Symptom                                   | Likely cause                        | Fix                                                                 |
+| ----------------------------------------- | ----------------------------------- | ------------------------------------------------------------------- |
+| `429 RATE_LIMIT_EXCEEDED` everywhere      | Legitimate burst / shared egress IP | Lower `maxRequests` only if needed; raise per-IP for load tests     |
+| `AUTH_REQUIRED` on every request          | Container restarted — session gone  | Re-run phone/code flow (sessions are in-memory)                     |
+| `CSP` blocks frontend assets in dev       | Local Vite uses unsafe-inline HMR   | Use `bun run dev` (separate CSP-disabled profile) not the container |
+| `Cannot find module '@telewa/contracts'`  | Build cache stale                   | `docker build --no-cache -t telewa:test .`                          |
+| `bun --cwd apps/server run start` exits 1 | Missing `dist/` (build skipped)     | Re-run `bun run build` before `docker build`                        |
+| Frontend 404s on `/api/*`                 | Reverse proxy not forwarding path   | Proxy: `location /api/ { proxy_pass http://telewa:3001; }`          |
 
 ### Quick diagnosis recipe
 
@@ -173,6 +181,6 @@ bun run --filter '@telewa/web' build
 
 ## 8. Versioning
 
-* `package.json` (root) `version` field is the source of truth for `APP_VERSION`.
-* Docker image is tagged with `<short-sha>` by default; pass `--tag vX.Y.Z` for releases.
-* Bump the root `version`, commit, tag, then `./scripts/deploy.sh --tag vX.Y.Z --push`.
+- `package.json` (root) `version` field is the source of truth for `APP_VERSION`.
+- Docker image is tagged with `<short-sha>` by default; pass `--tag vX.Y.Z` for releases.
+- Bump the root `version`, commit, tag, then `./scripts/deploy.sh --tag vX.Y.Z --push`.

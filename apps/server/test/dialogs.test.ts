@@ -50,4 +50,41 @@ describe('dialogs API', () => {
     expect(alice.unread).toBe(2)
     expect(alice.pinned).toBe(true)
   })
+
+  it('updates a dialog via PATCH', async () => {
+    await telegramAdapter.sendCode('+141****0199')
+    await telegramAdapter.submitCode('11111')
+    dialogProvider.setAuthState('authenticated')
+
+    const response = await app.request('/api/dialogs/alice', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ pinned: false, unread: 0, archived: true }),
+    })
+    const body = await response.json()
+    expect(response.status).toBe(200)
+    expect(body.data.id).toBe('alice')
+    expect(body.data.pinned).toBe(false)
+    expect(body.data.unread).toBe(0)
+    expect(body.data.archived).toBe(true)
+  })
+
+  it('deletes a dialog via DELETE', async () => {
+    await telegramAdapter.sendCode('+141****0199')
+    await telegramAdapter.submitCode('11111')
+    dialogProvider.setAuthState('authenticated')
+
+    const response = await app.request('/api/dialogs/alice', {
+      method: 'DELETE',
+    })
+    const body = await response.json()
+    expect(response.status).toBe(200)
+    expect(body.data.deleted).toBe(true)
+
+    // Verify it is no longer in list
+    const check = await app.request('/api/dialogs')
+    const checkBody = await check.json()
+    const ids = checkBody.data.dialogs.map((d: { id: string }) => d.id)
+    expect(ids).not.toContain('alice')
+  })
 })

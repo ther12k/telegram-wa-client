@@ -1352,7 +1352,9 @@ function GlobalSearch({
   onOpen: (id: string) => void
 }) {
   const [q, setQ] = useState('')
-  const [results, setResults] = useState<Array<{ chat: Chat; message?: Message; match: string }>>([])
+  const [results, setResults] = useState<Array<{ chat: Chat; message?: Message; match: string }>>(
+    [],
+  )
   const [searching, setSearching] = useState(false)
 
   useEffect(() => {
@@ -1370,7 +1372,7 @@ function GlobalSearch({
         if (!active) return
 
         const out: Array<{ chat: Chat; message?: Message; match: string }> = []
-        
+
         // 1. Process dialog matches
         for (const d of res.dialogs) {
           // Find matching loaded chat or reconstruct one

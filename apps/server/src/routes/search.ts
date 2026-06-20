@@ -48,7 +48,7 @@ export function createSearchRouter(
         d.peer.title.toLowerCase().includes(cleanQ) ||
         (d.peer.about && d.peer.about.toLowerCase().includes(cleanQ)) ||
         d.peer.initials.toLowerCase().includes(cleanQ)
-      );
+      )
     })
 
     // 2. Search message history

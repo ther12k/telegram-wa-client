@@ -6,7 +6,8 @@ export const structuredLogger = (): MiddlewareHandler => {
   return async (c, next) => {
     const start = performance.now()
     const requestId = c.get('requestId') || crypto.randomUUID()
-    const ip = c.req.header('x-forwarded-for')?.split(',')[0] || c.req.header('x-real-ip') || '127.0.0.1'
+    const ip =
+      c.req.header('x-forwarded-for')?.split(',')[0] || c.req.header('x-real-ip') || '127.0.0.1'
 
     await next()
 
@@ -50,7 +51,8 @@ export const rateLimiter = (options: {
 
   return async (c, next) => {
     // Preserving SSR friendliness: skip rate limiting if forward flags are missing (optional but good practice)
-    const ip = c.req.header('x-forwarded-for')?.split(',')[0] || c.req.header('x-real-ip') || '127.0.0.1'
+    const ip =
+      c.req.header('x-forwarded-for')?.split(',')[0] || c.req.header('x-real-ip') || '127.0.0.1'
     const now = Date.now()
 
     let bucket = store.get(ip)
@@ -84,14 +86,15 @@ export const rateLimiter = (options: {
 }
 
 // 3. Secure Headers Wrapper
-export const securityHeaders = () => secureHeaders({
-  contentSecurityPolicy: {
-    defaultSrc: ["'self'"],
-    scriptSrc: ["'self'", "'unsafe-inline'"],
-    styleSrc: ["'self'", "'unsafe-inline'"],
-    imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-    connectSrc: ["'self'", 'ws:', 'wss:', 'https:'],
-    mediaSrc: ["'self'", 'blob:', 'https:', 'data:'],
-  },
-  crossOriginEmbedderPolicy: false,
-})
+export const securityHeaders = () =>
+  secureHeaders({
+    contentSecurityPolicy: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+      connectSrc: ["'self'", 'ws:', 'wss:', 'https:'],
+      mediaSrc: ["'self'", 'blob:', 'https:', 'data:'],
+    },
+    crossOriginEmbedderPolicy: false,
+  })
