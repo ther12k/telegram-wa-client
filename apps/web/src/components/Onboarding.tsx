@@ -11,34 +11,150 @@ import {
   Globe2,
   Check,
 } from 'lucide-react'
-
-type Step = 'welcome' | 'phone' | 'otp' | 'password' | 'qr'
+import { api } from '../api'
 
 export default function Onboarding({ onDone }: { onDone: () => void }) {
-  const [step, setStep] = useState<Step>('welcome')
+  const [step, setStep] = useState<'welcome' | 'phone' | 'otp' | 'password' | 'qr'>('welcome')
   const [phone, setPhone] = useState('415 555 0199')
   const [country, setCountry] = useState('+1')
   const [otp, setOtp] = useState(['', '', '', '', '', ''])
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [qrScanning, setQrScanning] = useState(false)
+  const [qrUrl, setQrUrl] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
+  const [resendTimer, setResendTimer] = useState(42)
   const otpRefs = useRef<Array<HTMLInputElement | null>>([])
+
+  // Polling authentication state on mount and step changes
+  useEffect(() => {
+    let active = true
+    const checkState = async () => {
+      try {
+        const state = await api.getAuthState()
+        if (!active) return
+        if (state.status === 'authenticated') {
+          onDone()
+        } else if (state.status === 'requires_password') {
+          setStep('password')
+        } else if (state.status === 'requires_code') {
+          setStep('otp')
+        } else if (state.status === 'requires_qr' && state.qrCodeUrl) {
+          setQrUrl(state.qrCodeUrl)
+          setStep('qr')
+        }
+      } catch (err) {
+        console.error('Failed to sync auth state', err)
+      }
+    }
+    checkState()
+    const timer = setInterval(checkState, 2000)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [step, onDone])
+
+  // Countdown timer for resending code
+  useEffect(() => {
+    if (step !== 'otp' || resendTimer <= 0) return
+    const id = setTimeout(() => setResendTimer((t) => t - 1), 1000)
+    return () => clearTimeout(id)
+  }, [step, resendTimer])
 
   useEffect(() => {
     if (step === 'otp') otpRefs.current[0]?.focus()
   }, [step])
 
-  const onOtpChange = (i: number, v: string) => {
+  const onOtpChange = async (i: number, v: string) => {
     if (!/^\d?$/.test(v)) return
     const next = [...otp]
     next[i] = v
     setOtp(next)
-    if (v && i < 5) otpRefs.current[i + 1]?.focus()
-    if (next.every(Boolean)) setTimeout(() => setStep('password'), 350)
+    if (v && i < 5) {
+      otpRefs.current[i + 1]?.focus()
+    }
+    if (next.every(Boolean)) {
+      const fullCode = next.join('')
+      try {
+        setErrorMsg('')
+        const state = await api.submitCode({ code: fullCode })
+        if (state.status === 'requires_password') {
+          setStep('password')
+        } else if (state.status === 'authenticated') {
+          onDone()
+        }
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : 'Invalid code.')
+      }
+    }
   }
 
   const onOtpKey = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Backspace' && !otp[i] && i > 0) otpRefs.current[i - 1]?.focus()
+  }
+
+  const handleSendPhone = async () => {
+    try {
+      setErrorMsg('')
+      const fullNumber = `${country}${phone.replace(/\s+/g, '')}`
+      const state = await api.sendCode({ phone: fullNumber })
+      if (state.status === 'requires_code') {
+        setResendTimer(42)
+        setStep('otp')
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to send verification code.')
+    }
+  }
+
+  const handleVerifyPassword = async () => {
+    try {
+      setErrorMsg('')
+      const state = await api.submitPassword({ password })
+      if (state.status === 'authenticated') {
+        onDone()
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : 'Incorrect password.')
+    }
+  }
+
+  const handleStartQr = async () => {
+    try {
+      setErrorMsg('')
+      setQrScanning(true)
+      const state = await api.startQrLogin()
+      if (state.qrCodeUrl) {
+        setQrUrl(state.qrCodeUrl)
+        setStep('qr')
+      }
+    } catch (err) {
+      setQrScanning(false)
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to start QR code login.')
+    }
+  }
+
+  const handleBackToPhone = async () => {
+    try {
+      await api.logout()
+      setOtp(['', '', '', '', '', ''])
+      setPassword('')
+      setErrorMsg('')
+      setStep('phone')
+    } catch {
+      setStep('phone')
+    }
+  }
+
+  const handleBackToWelcome = async () => {
+    try {
+      await api.logout()
+      setErrorMsg('')
+      setStep('welcome')
+    } catch {
+      setStep('welcome')
+    }
   }
 
   return (
@@ -59,6 +175,12 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         </div>
 
         <div className="bg-white dark:bg-[#111b21] rounded-3xl shadow-xl shadow-slate-200/60 dark:shadow-black/40 ring-1 ring-slate-200/70 dark:ring-white/5 p-7 sm:p-8 animate-fade-in">
+          {errorMsg && (
+            <div className="mb-4 p-3 rounded-2xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 text-xs font-medium text-center">
+              {errorMsg}
+            </div>
+          )}
+
           {step === 'welcome' && (
             <div className="text-center space-y-6">
               <div className="mx-auto h-24 w-24 rounded-3xl bg-gradient-to-br from-brand-400 to-brand-700 flex items-center justify-center shadow-xl shadow-brand-500/30">
@@ -96,7 +218,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 Get started <ArrowRight className="h-4 w-4" />
               </button>
               <button
-                onClick={() => setStep('qr')}
+                onClick={handleStartQr}
                 className="w-full h-11 rounded-2xl bg-slate-100 dark:bg-[#1f2c33] hover:bg-slate-200 dark:hover:bg-[#253541] transition text-slate-700 dark:text-slate-200 text-sm font-medium flex items-center justify-center gap-2"
               >
                 <QrCode className="h-4 w-4" /> Log in with QR code
@@ -111,7 +233,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             <div className="space-y-5 animate-fade-in">
               <div>
                 <button
-                  onClick={() => setStep('welcome')}
+                  onClick={handleBackToWelcome}
                   className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-sm inline-flex items-center gap-1"
                 >
                   <ArrowLeft className="h-4 w-4" /> Back
@@ -122,7 +244,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   Enter your phone number
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  We'll send you a 6-digit code to verify.
+                  We'll send you a verification code.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -150,15 +272,11 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 </div>
               </div>
               <button
-                onClick={() => setStep('otp')}
+                onClick={handleSendPhone}
                 className="w-full h-12 rounded-2xl bg-brand-500 hover:bg-brand-600 transition text-white font-semibold flex items-center justify-center gap-2 shadow-lg shadow-brand-500/30"
               >
                 Send verification code <ArrowRight className="h-4 w-4" />
               </button>
-              <div className="text-[11px] text-slate-400 dark:text-slate-500 text-center">
-                We'll never share your number. View our{' '}
-                <span className="text-brand-600">Privacy Policy</span>.
-              </div>
             </div>
           )}
 
@@ -166,7 +284,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             <div className="space-y-5 animate-fade-in">
               <div>
                 <button
-                  onClick={() => setStep('phone')}
+                  onClick={handleBackToPhone}
                   className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-sm inline-flex items-center gap-1"
                 >
                   <ArrowLeft className="h-4 w-4" /> Back
@@ -177,7 +295,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   Verify your number
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Enter the 6-digit code sent to{' '}
+                  Enter the code sent to{' '}
                   <span className="font-medium text-slate-700 dark:text-slate-200">
                     {country} {phone}
                   </span>
@@ -202,20 +320,9 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
               </div>
               <div className="flex items-center justify-center gap-2 text-sm">
                 <div className="h-8 w-8 rounded-full bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 font-semibold">
-                  42
+                  {resendTimer}
                 </div>
                 <span className="text-slate-500 dark:text-slate-400">Resend code in seconds</span>
-              </div>
-              <button
-                onClick={() => setStep('password')}
-                className="w-full h-12 rounded-2xl bg-brand-500 hover:bg-brand-600 transition text-white font-semibold shadow-lg shadow-brand-500/30"
-              >
-                Verify
-              </button>
-              <div className="text-[11px] text-slate-400 dark:text-slate-500 text-center">
-                Didn't receive it?{' '}
-                <button className="text-brand-600 font-medium">Resend code</button> or{' '}
-                <button className="text-brand-600 font-medium">try another method</button>.
               </div>
             </div>
           )}
@@ -224,7 +331,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             <div className="space-y-5 animate-fade-in">
               <div>
                 <button
-                  onClick={() => setStep('otp')}
+                  onClick={handleBackToPhone}
                   className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-sm inline-flex items-center gap-1"
                 >
                   <ArrowLeft className="h-4 w-4" /> Back
@@ -238,7 +345,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   Two-step verification
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Enter your 6-digit PIN to secure your account.
+                  Enter your password to secure your account.
                 </p>
               </div>
               <div className="relative">
@@ -246,8 +353,8 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   type={showPw ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter PIN"
-                  className="w-full h-12 px-4 pr-12 rounded-2xl bg-slate-100 dark:bg-[#1f2c33] text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500 outline-none tracking-widest text-center font-semibold"
+                  placeholder="Enter Password"
+                  className="w-full h-12 px-4 pr-12 rounded-2xl bg-slate-100 dark:bg-[#1f2c33] text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-brand-500 outline-none text-center font-semibold"
                 />
                 <button
                   onClick={() => setShowPw(!showPw)}
@@ -258,17 +365,11 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 </button>
               </div>
               <button
-                onClick={onDone}
+                onClick={handleVerifyPassword}
                 className="w-full h-12 rounded-2xl bg-brand-500 hover:bg-brand-600 transition text-white font-semibold flex items-center justify-center gap-2 shadow-lg shadow-brand-500/30"
               >
-                <Check className="h-4 w-4" /> Finish setup
+                <Check className="h-4 w-4" /> Verify
               </button>
-              <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
-                <button className="hover:text-brand-600">Forgot PIN?</button>
-                <button onClick={onDone} className="hover:text-brand-600">
-                  Skip for now
-                </button>
-              </div>
             </div>
           )}
 
@@ -276,7 +377,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
             <div className="space-y-5 animate-fade-in">
               <div>
                 <button
-                  onClick={() => setStep('welcome')}
+                  onClick={handleBackToWelcome}
                   className="text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-sm inline-flex items-center gap-1"
                 >
                   <ArrowLeft className="h-4 w-4" /> Back
@@ -287,11 +388,11 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   Log in with QR code
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Scan this code from your phone to continue on desktop.
+                  Scan this code from your phone to continue.
                 </p>
               </div>
               <div className="mx-auto p-4 bg-white rounded-2xl shadow-inner w-fit relative overflow-hidden">
-                <QrSvg />
+                <QrSvg value={qrUrl} />
                 {qrScanning && (
                   <div className="absolute inset-4 rounded-lg ring-2 ring-brand-500 pointer-events-none">
                     <div className="absolute inset-x-0 top-1/2 h-0.5 bg-brand-500 pulse-ring" />
@@ -303,49 +404,37 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                   <span className="h-6 w-6 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
                     1
                   </span>{' '}
-                  Open Teletalk on your phone
+                  Open Telegram on your phone
                 </li>
                 <li className="flex gap-3">
                   <span className="h-6 w-6 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
                     2
                   </span>{' '}
-                  Go to <span className="font-medium">Settings → Linked devices</span>
+                  Go to <span className="font-medium">Settings → Devices → Link Desktop</span>
                 </li>
                 <li className="flex gap-3">
                   <span className="h-6 w-6 rounded-full bg-brand-500 text-white flex items-center justify-center text-xs font-bold shrink-0">
                     3
                   </span>{' '}
-                  Tap <span className="font-medium">Link a device</span> and scan
+                  Scan this screen with your phone camera
                 </li>
               </ol>
-              <button
-                onClick={() => {
-                  setQrScanning(true)
-                  setTimeout(onDone, 1400)
-                }}
-                className="w-full h-11 rounded-2xl bg-slate-100 dark:bg-[#1f2c33] hover:bg-slate-200 dark:hover:bg-[#253541] text-slate-700 dark:text-slate-200 text-sm font-medium"
-              >
-                {qrScanning ? 'Scanning…' : 'Simulate scan'}
-              </button>
             </div>
           )}
-        </div>
-
-        <div className="text-center text-[11px] text-slate-400 dark:text-slate-500 mt-6">
-          © 2026 Teletalk · This is a design mockup
         </div>
       </div>
     </div>
   )
 }
 
-function QrSvg() {
-  // Deterministic pseudo-random QR-like grid
+function QrSvg({ value }: { value?: string }) {
   const size = 25
   const cells: boolean[] = []
   let seed = 7
+  // Use length of qrCode value to slightly vary QR structure
+  const valLength = value?.length || 10
   for (let i = 0; i < size * size; i++) {
-    seed = (seed * 9301 + 49297) % 233280
+    seed = (seed * 9301 + 49297 + valLength) % 233280
     cells.push(seed / 233280 > 0.52)
   }
   const isFinder = (r: number, c: number) => {
