@@ -10,6 +10,19 @@ export interface DialogProvider {
    * Lists dialogs (chat list) for the authenticated user, with last messages and counters.
    */
   listDialogs(): Promise<DialogList>
+
+  /**
+   * Mutates a dialog's state (pinned, muted, archived, unread, etc.)
+   */
+  updateDialog(
+    chatId: string,
+    updates: Partial<Pick<Dialog, 'pinned' | 'muted' | 'archived' | 'unread'>>,
+  ): Promise<Dialog | null>
+
+  /**
+   * Deletes a dialog (removes it).
+   */
+  deleteDialog(chatId: string): Promise<boolean>
 }
 
 /**
@@ -18,9 +31,13 @@ export interface DialogProvider {
  */
 export class FixtureDialogProvider implements DialogProvider {
   private authState: AuthState['status'] = 'unauthenticated'
+  private dialogs: Dialog[] | null = null
 
   setAuthState(status: AuthState['status']) {
     this.authState = status
+    if (status === 'unauthenticated') {
+      this.dialogs = null
+    }
   }
 
   async getCurrentUser() {
@@ -28,7 +45,8 @@ export class FixtureDialogProvider implements DialogProvider {
     return { id: 'me', title: 'You', initials: 'YO' }
   }
 
-  async listDialogs(): Promise<DialogList> {
+  private initDialogs() {
+    if (this.dialogs) return
     const peers: { peer: Peer; last: LastMessage | null; unread: number; pinned: boolean }[] = [
       {
         peer: {
@@ -127,7 +145,7 @@ export class FixtureDialogProvider implements DialogProvider {
       },
     ]
 
-    const dialogs: Dialog[] = peers.map(({ peer, last, unread, pinned }) => ({
+    this.dialogs = peers.map(({ peer, last, unread, pinned }) => ({
       id: peer.id,
       peer,
       lastMessage: last,
@@ -136,7 +154,32 @@ export class FixtureDialogProvider implements DialogProvider {
       muted: false,
       archived: false,
     }))
+  }
 
-    return { dialogs, total: dialogs.length }
+  async listDialogs(): Promise<DialogList> {
+    this.initDialogs()
+    return { dialogs: this.dialogs!, total: this.dialogs!.length }
+  }
+
+  async updateDialog(
+    chatId: string,
+    updates: Partial<Pick<Dialog, 'pinned' | 'muted' | 'archived' | 'unread'>>,
+  ): Promise<Dialog | null> {
+    this.initDialogs()
+    const d = this.dialogs!.find((x) => x.id === chatId)
+    if (!d) return null
+    if (updates.pinned !== undefined) d.pinned = updates.pinned
+    if (updates.muted !== undefined) d.muted = updates.muted
+    if (updates.archived !== undefined) d.archived = updates.archived
+    if (updates.unread !== undefined) d.unread = updates.unread
+    return d
+  }
+
+  async deleteDialog(chatId: string): Promise<boolean> {
+    this.initDialogs()
+    const idx = this.dialogs!.findIndex((x) => x.id === chatId)
+    if (idx === -1) return false
+    this.dialogs!.splice(idx, 1)
+    return true
   }
 }

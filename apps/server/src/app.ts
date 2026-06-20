@@ -9,8 +9,10 @@ import { createAuthRouter } from './routes/auth'
 import { createDialogRouter } from './routes/dialogs'
 import { createMessagesRouter } from './routes/messages'
 import { createMediaRouter, InMemoryMediaStore } from './routes/media'
+import { createSearchRouter } from './routes/search'
 import { RealtimeBus } from './realtime/bus'
 import { createRealtimeRouter } from './routes/realtime'
+import { rateLimiter, securityHeaders, structuredLogger } from './hardening'
 
 export type Bindings = { Variables: { requestId: string } }
 export const app = new Hono<Bindings>()
@@ -41,12 +43,16 @@ app.use('*', async (c, next) => {
   c.header('x-request-id', requestId)
   await next()
 })
+app.use('*', securityHeaders())
+app.use('*', structuredLogger())
+app.use('/api/*', rateLimiter({ windowMs: 60000, maxRequests: 200 }))
 app.use('/api/*', cors({ origin: ['http://localhost:5173'], credentials: true }))
 
 app.route('/api/auth', createAuthRouter(telegramAdapter))
 app.route('/api/dialogs', createDialogRouter(dialogProvider, isAuthenticated))
 app.route('/api/messages', createMessagesRouter(messageProvider, isAuthenticated))
 app.route('/api/media', createMediaRouter(mediaStore, isAuthenticated))
+app.route('/api/search', createSearchRouter(dialogProvider, messageProvider, isAuthenticated))
 app.route('/api/realtime', createRealtimeRouter(realtimeBus, isAuthenticated))
 
 const ok = <T>(c: Context<Bindings>, data: T, status: 200 | 201 = 200) =>

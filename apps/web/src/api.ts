@@ -106,4 +106,14 @@ export const api = {
         method: 'POST',
       },
     ),
+  search: (q: string) => request<import('@telewa/contracts').SearchResult>(`/api/search?q=${encodeURIComponent(q)}`),
+  updateDialog: (chatId: string, updates: Partial<Pick<import('@telewa/contracts').Dialog, 'pinned' | 'muted' | 'archived' | 'unread'>>) =>
+    request<import('@telewa/contracts').Dialog>(`/api/dialogs/${encodeURIComponent(chatId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    }),
+  deleteDialog: (chatId: string) =>
+    request<{ chatId: string; deleted: boolean }>(`/api/dialogs/${encodeURIComponent(chatId)}`, {
+      method: 'DELETE',
+    }),
 }

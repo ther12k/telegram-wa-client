@@ -130,6 +130,11 @@ export const mediaMetaSchema = z.object({
   duration: z.number().nonnegative().optional(),
 })
 
+export const searchResultSchema = z.object({
+  dialogs: z.array(dialogSchema),
+  messages: z.array(messageSchema),
+})
+
 export const messageHistorySchema = z.object({
   chatId: z.string(),
   messages: z.array(messageSchema),
@@ -202,3 +207,4 @@ export type Message = z.infer<typeof messageSchema>
 export type MessageHistory = z.infer<typeof messageHistorySchema>
 export type SendMessageInput = z.infer<typeof sendMessageSchema>
 export type MediaMeta = z.infer<typeof mediaMetaSchema>
+export type SearchResult = z.infer<typeof searchResultSchema>

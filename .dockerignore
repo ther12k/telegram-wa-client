@@ -1,0 +1,17 @@
+.git
+.github
+.husky
+.vscode
+.idea
+node_modules
+**/node_modules
+**/dist
+**/.cache
+**/coverage
+**/*.log
+**/.DS_Store
+**/.env
+**/.env.*
+!.env.example
+tests-output
+*.tsbuildinfo

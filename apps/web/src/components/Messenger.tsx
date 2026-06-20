@@ -425,10 +425,15 @@ export default function Messenger({
     )
   }
 
-  const onChatAction = (
+  const onChatAction = async (
     chatId: string,
     action: 'pin' | 'mute' | 'archive' | 'unread' | 'delete',
   ) => {
+    // Reconstruct the exact current state of the dialog to calculate transitions
+    const target = chats.find((c) => c.id === chatId)
+    if (!target) return
+
+    // Optimistic UI updates
     setChats((prev) =>
       prev
         .map((c) => {
@@ -443,6 +448,30 @@ export default function Messenger({
         .filter((c) => !(action === 'delete' && c.id === chatId)),
     )
     if (action === 'delete' && selectedId === chatId) setSelectedId(null)
+
+    // Side-effect API mutations
+    try {
+      if (action === 'delete') {
+        await api.deleteDialog(chatId)
+      } else {
+        const updates: Partial<Parameters<typeof api.updateDialog>[1]> = {}
+        if (action === 'pin') updates.pinned = !target.pinned
+        if (action === 'mute') updates.muted = !target.muted
+        if (action === 'archive') updates.archived = true
+        if (action === 'unread') updates.unread = (target.unread ?? 0) + 1
+        await api.updateDialog(chatId, updates)
+      }
+    } catch (err) {
+      console.error('Failed to perform dialog action', err)
+      // Rollback optimistic state by reloading dialogs from backend
+      try {
+        const list = await api.listDialogs()
+        const fixtureFallback = initialChats[0]?.messages ?? []
+        setChats(list.dialogs.map((d) => dialogToChat(d, fixtureFallback)))
+      } catch {
+        /* ignore fallback load failure */
+      }
+    }
   }
 
   const pickEmoji = (e: string) => {
@@ -1323,19 +1352,75 @@ function GlobalSearch({
   onOpen: (id: string) => void
 }) {
   const [q, setQ] = useState('')
-  const results = useMemo(() => {
-    if (!q) return []
-    const lq = q.toLowerCase()
-    const out: Array<{ chat: Chat; message?: Message; match: string }> = []
-    for (const c of chats) {
-      if (c.name.toLowerCase().includes(lq)) out.push({ chat: c, match: c.name })
-      for (const m of c.messages) {
-        if (m.text && m.text.toLowerCase().includes(lq)) {
-          out.push({ chat: c, message: m, match: m.text })
-        }
-      }
+  const [results, setResults] = useState<Array<{ chat: Chat; message?: Message; match: string }>>([])
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    const cleanQ = q.trim()
+    if (!cleanQ) {
+      setResults([])
+      return
     }
-    return out.slice(0, 12)
+
+    let active = true
+    const delay = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const res = await api.search(cleanQ)
+        if (!active) return
+
+        const out: Array<{ chat: Chat; message?: Message; match: string }> = []
+        
+        // 1. Process dialog matches
+        for (const d of res.dialogs) {
+          // Find matching loaded chat or reconstruct one
+          const existing = chats.find((c) => c.id === d.id)
+          if (existing) {
+            out.push({ chat: existing, match: existing.name })
+          } else {
+            const initials = d.peer.initials || d.peer.title.slice(0, 2).toUpperCase()
+            const avatarColor = 'from-brand-400 to-brand-700'
+            const time = d.lastMessage?.sentAt ? formatRelativeShort(d.lastMessage.sentAt) : ''
+            out.push({
+              chat: {
+                id: d.id,
+                name: d.peer.title,
+                kind: PEER_KIND_MAP[d.peer.type],
+                avatarColor,
+                initials,
+                subtitle: d.lastMessage?.text ?? d.peer.about ?? '',
+                time,
+                messages: [],
+              },
+              match: d.peer.title,
+            })
+          }
+        }
+
+        // 2. Process message matches
+        for (const m of res.messages) {
+          const chat = chats.find((c) => c.id === m.chatId)
+          if (chat) {
+            const frontendMsg = messageToFrontend(m)
+            // Prevent duplicate entries for the same chat if the dialog already matched
+            if (!out.some((o) => o.chat.id === m.chatId && o.message?.id === m.id)) {
+              out.push({ chat, message: frontendMsg, match: m.text })
+            }
+          }
+        }
+
+        setResults(out)
+      } catch (err) {
+        console.error('Search failed', err)
+      } finally {
+        if (active) setSearching(false)
+      }
+    }, 300)
+
+    return () => {
+      active = false
+      clearTimeout(delay)
+    }
   }, [q, chats])
 
   useEffect(() => {
@@ -1364,12 +1449,15 @@ function GlobalSearch({
             placeholder="Search messages, people, files…"
             className="flex-1 bg-transparent text-slate-900 dark:text-white placeholder:text-slate-400 outline-none"
           />
+          {searching && (
+            <div className="h-4 w-4 rounded-full border-2 border-brand-500 border-t-transparent animate-spin" />
+          )}
           <kbd className="hidden sm:inline-flex h-6 px-1.5 rounded bg-slate-100 dark:bg-[#2a3942] text-[10px] font-semibold text-slate-500 items-center">
             ESC
           </kbd>
         </div>
         <div className="max-h-96 overflow-y-auto slim-scroll">
-          {q && results.length === 0 && (
+          {q && !searching && results.length === 0 && (
             <div className="p-10 text-center text-sm text-slate-500">No results for "{q}"</div>
           )}
           {!q && (

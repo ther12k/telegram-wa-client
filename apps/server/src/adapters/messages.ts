@@ -22,6 +22,11 @@ export interface MessageProvider {
    * Marks a chat as fully read.
    */
   markRead(chatId: string): Promise<void>
+
+  /**
+   * Search messages matching a query string.
+   */
+  searchMessages(query: string): Promise<Message[]>
 }
 
 const SAMPLE_REPLIES = [
@@ -193,5 +198,27 @@ export class InMemoryMessageProvider implements MessageProvider {
     if (!history) return
     const updated = history.map((m) => (m.outbox ? m : { ...m, status: 'read' as const }))
     this.historyByChat.set(chatId, updated)
+  }
+
+  async searchMessages(query: string): Promise<Message[]> {
+    // Seed history for standard users so search results can find standard items
+    const seededChats = ['alice', 'priya', 'mom', 'design-team', 'teletalk-updates']
+    for (const id of seededChats) {
+      this.seedHistory(id)
+    }
+
+    const matches: Message[] = []
+    const cleanQ = query.toLowerCase().trim()
+    if (!cleanQ) return matches
+
+    for (const [_, list] of this.historyByChat.entries()) {
+      for (const m of list) {
+        if (m.text && m.text.toLowerCase().includes(cleanQ)) {
+          matches.push(m)
+        }
+      }
+    }
+
+    return matches.sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime())
   }
 }

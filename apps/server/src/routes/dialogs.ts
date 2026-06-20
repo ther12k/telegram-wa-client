@@ -52,5 +52,74 @@ export function createDialogRouter(
     })
   })
 
+  // PATCH /api/dialogs/:chatId — mutate dialog state (pin, archive, mute, read status)
+  router.patch('/:chatId', async (c) => {
+    if (!(await isAuthenticated())) {
+      return c.json(
+        {
+          success: false as const,
+          error: { code: 'AUTH_REQUIRED', message: 'Sign in to update chats.', retryable: false },
+          meta: { requestId: c.get('requestId') },
+        },
+        401,
+      )
+    }
+
+    const chatId = c.req.param('chatId')
+    const body = await c.req.json().catch(() => ({}))
+    const updated = await provider.updateDialog(chatId, body)
+
+    if (!updated) {
+      return c.json(
+        {
+          success: false as const,
+          error: { code: 'CHAT_NOT_FOUND', message: 'Chat not found.', retryable: false },
+          meta: { requestId: c.get('requestId') },
+        },
+        404,
+      )
+    }
+
+    return c.json({
+      success: true as const,
+      data: updated,
+      meta: { requestId: c.get('requestId') },
+    })
+  })
+
+  // DELETE /api/dialogs/:chatId — delete/remove dialog
+  router.delete('/:chatId', async (c) => {
+    if (!(await isAuthenticated())) {
+      return c.json(
+        {
+          success: false as const,
+          error: { code: 'AUTH_REQUIRED', message: 'Sign in to delete chats.', retryable: false },
+          meta: { requestId: c.get('requestId') },
+        },
+        401,
+      )
+    }
+
+    const chatId = c.req.param('chatId')
+    const success = await provider.deleteDialog(chatId)
+
+    if (!success) {
+      return c.json(
+        {
+          success: false as const,
+          error: { code: 'CHAT_NOT_FOUND', message: 'Chat not found.', retryable: false },
+          meta: { requestId: c.get('requestId') },
+        },
+        404,
+      )
+    }
+
+    return c.json({
+      success: true as const,
+      data: { chatId, deleted: true },
+      meta: { requestId: c.get('requestId') },
+    })
+  })
+
   return router
 }
