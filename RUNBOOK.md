@@ -70,6 +70,31 @@ ssh "$SSH_HOST" "docker run -d --name telewa -p 3001:3001 --restart unless-stopp
 | `APP_VERSION` | `dev`     | version stamped into `APP_VERSION` env var   |
 | `APP_COMMIT`  | `unknown` | commit sha stamped into `APP_COMMIT` env var |
 
+### Dev runner (for hostile hosts)
+
+Halotec (Ubuntu 18.04, `GLIBC 2.27`) is too old for ESLint 10 (needs Node ≥ 17).
+To run `bun run check` on hosts where bun's deps blow up on glibc, use the
+companion `telewa-dev-runner` container:
+
+```bash
+cd ~/telegram-wa-client
+export PATH=~/.bun/bin:$PATH
+./scripts/dev-runner.sh up            # builds + starts the runner
+./scripts/run-check.sh check          # runs bun run check inside
+./scripts/run-check.sh test           # bun test
+./scripts/run-check.sh build          # server + web builds
+./scripts/run-check.sh format         # prettier --write
+./scripts/run-check.sh shell          # interactive bash inside runner
+./scripts/dev-runner.sh status        # container + image state
+./scripts/dev-runner.sh rebuild       # force image rebuild
+./scripts/dev-runner.sh stop          # stop + remove container
+```
+
+The runner image (`telewa-dev-runner`) is built from `Dockerfile.runner` on top
+of `oven/bun:1.3.14` (glibc 2.36+). The container starts with
+`--user $host_uid:$host_gid` so the bind-mounted workspace stays writable for
+the host user — no root-owned files leak back into the repo.
+
 ---
 
 ## 3. Health checks

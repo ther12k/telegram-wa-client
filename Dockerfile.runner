@@ -1,0 +1,45 @@
+# Dockerfile.runner
+# Image for the `telewa-dev-runner` container. Carries the full Bun toolchain
+# plus the system libs needed for the monorepo's quality gates (format:check,
+# lint, typecheck, test, build). Built on oven/bun:1.3.14 (glibc 2.36+).
+#
+# Why glibc-based instead of -alpine:
+#   - ESLint 10.x requires Node 17+ (uses structuredClone natively).
+#   - The CI box and host images need to run `bun run lint` + `bun test` end-to-end.
+#   - Alpine ships musl; some native deps for hashing/crypto are slower on musl.
+#
+# Layer order (rarely-changing first):
+#   1. oven/bun:1.3.14 base
+#   2. OS deps (git, ca-certs, openssh-client for future ops)
+#   3. WORKDIR + label
+#
+# Source is mounted at runtime via `-v $PWD:/workspace`, so no COPY here.
+
+FROM oven/bun:1.3.14
+
+LABEL org.opencontainers.image.title="telewa-dev-runner"
+LABEL org.opencontainers.image.description="Bun monorepo runner for telegram-wa-client (lint + test + build)"
+LABEL telewa.role="dev-runner"
+
+# git is needed for any future `git diff` / `git log` inside the runner.
+# ca-certificates so HTTPS clones to github work inside the runner.
+# openssh-client so future `git+ssh` clones work.
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        git \
+        ca-certificates \
+        openssh-client \
+        bash \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Drop back to the `bun` user that oven/bun ships with. UID matches the host
+# bind-mount so files written from inside the container stay owned by the
+# host user (no root-owned files blocking future `git` operations).
+USER bun
+
+# Entrypoint is overridden at `docker run` time with `tail -f /dev/null` so
+# the container stays alive across many `docker exec` invocations.
+CMD ["bash"]
