@@ -45,8 +45,82 @@ import {
   ContextMenu,
 } from './Panels'
 import { api } from '../api'
+import type { Dialog, DialogList, Message as BackendMessage } from '@telewa/contracts'
+import { useRealtime } from '../hooks/useRealtime'
 
 type Filter = 'all' | 'unread' | 'private' | 'groups' | 'channels'
+
+const FALLBACK_AVATAR_COLORS: Record<string, string> = {
+  alice: 'from-rose-400 to-pink-600',
+  priya: 'from-amber-400 to-orange-600',
+  carlos: 'from-sky-400 to-indigo-600',
+  mom: 'from-fuchsia-400 to-purple-600',
+  sarah: 'from-teal-400 to-cyan-600',
+  oliver: 'from-emerald-400 to-green-600',
+  nina: 'from-violet-400 to-purple-600',
+  leo: 'from-orange-400 to-red-600',
+}
+
+const PEER_KIND_MAP: Record<Dialog['peer']['type'], Chat['kind']> = {
+  user: 'private',
+  group: 'group',
+  channel: 'channel',
+}
+
+function formatRelativeShort(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const min = Math.floor(diff / 60_000)
+  if (min < 1) return 'now'
+  if (min < 60) return `${min}m`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h`
+  const d = Math.floor(hr / 24)
+  return `${d}d`
+}
+
+function dialogToChat(d: Dialog, fallbackMessages: Message[]): Chat {
+  const initials = d.peer.initials || d.peer.title.slice(0, 2).toUpperCase()
+  const avatarColor = FALLBACK_AVATAR_COLORS[d.peer.id] ?? 'from-brand-400 to-brand-700'
+  const subtitle = d.lastMessage?.text ?? d.peer.about ?? ''
+  const time = d.lastMessage?.sentAt ? formatRelativeShort(d.lastMessage.sentAt) : ''
+  const personMessages = (people as Record<string, { messages?: Message[] }>)[d.peer.id]?.messages
+  const messages = personMessages ?? fallbackMessages
+  return {
+    id: d.id,
+    name: d.peer.title,
+    kind: PEER_KIND_MAP[d.peer.type],
+    avatarColor,
+    initials,
+    subtitle,
+    time,
+    unread: d.unread || undefined,
+    pinned: d.pinned,
+    muted: d.muted,
+    archived: d.archived,
+    online: d.peer.online,
+    members: d.peer.members,
+    verified: d.peer.verified,
+    messages,
+  }
+}
+
+function isoToTimeLabel(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function messageToFrontend(m: BackendMessage): Message {
+  return {
+    id: m.id,
+    authorId: m.outbox ? undefined : m.senderId,
+    kind: m.kind,
+    text: m.text,
+    time: isoToTimeLabel(m.sentAt),
+    status: m.status === 'sending' ? 'sending' : m.status === 'failed' ? 'failed' : 'sent',
+    ...(m.replyTo ? { replyTo: m.replyTo } : {}),
+  }
+}
 
 export default function Messenger({
   dark,
@@ -59,6 +133,8 @@ export default function Messenger({
 }) {
   const [chats, setChats] = useState<Chat[]>(initialChats)
   const [selectedId, setSelectedId] = useState<string | null>(initialChats[0]?.id ?? null)
+  const [dialogsLoading, setDialogsLoading] = useState(true)
+  const [dialogsError, setDialogsError] = useState<string | null>(null)
   const [filter, setFilter] = useState<Filter>('all')
   const [query, setQuery] = useState('')
   const [composer, setComposer] = useState('')
@@ -71,6 +147,87 @@ export default function Messenger({
   const [menu, setMenu] = useState<{ x: number; y: number; chatId: string } | null>(null)
   const [replyTo, setReplyTo] = useState<Message | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Load real dialogs from the backend, with fallback to fixtures on failure.
+  useEffect(() => {
+    let active = true
+    const loadDialogs = async () => {
+      try {
+        const list: DialogList & { currentUser?: unknown } = await api.listDialogs()
+        if (!active) return
+        const fixtureFallback = initialChats[0]?.messages ?? []
+        const mapped = list.dialogs.map((d) => dialogToChat(d, fixtureFallback))
+        setChats(mapped)
+        setSelectedId((cur) =>
+          cur && mapped.some((m) => m.id === cur) ? cur : (mapped[0]?.id ?? null),
+        )
+        setDialogsError(null)
+      } catch (err) {
+        if (!active) return
+        console.warn('Falling back to fixture dialogs', err)
+        setDialogsError(err instanceof Error ? err.message : 'Failed to load dialogs')
+      } finally {
+        if (active) setDialogsLoading(false)
+      }
+    }
+    loadDialogs()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // Fetch real message history whenever a chat is selected.
+  useEffect(() => {
+    if (!selectedId) return
+    let active = true
+    const loadHistory = async () => {
+      try {
+        const history = await api.getHistory(selectedId, { limit: 50 })
+        if (!active) return
+        setChats((prev) =>
+          prev.map((c) =>
+            c.id === selectedId
+              ? {
+                  ...c,
+                  messages: history.messages.map(messageToFrontend),
+                }
+              : c,
+          ),
+        )
+      } catch (err) {
+        if (!active) return
+        console.warn('Failed to load history', err)
+      }
+    }
+    loadHistory()
+    return () => {
+      active = false
+    }
+  }, [selectedId])
+
+  // Subscribe to realtime updates and merge new messages into the active chat.
+  useRealtime({
+    isAuthenticated: true, // Messenger only mounts after sign-in
+    onEvent: (event) => {
+      if (event.type !== 'message.new') return
+      const incoming = messageToFrontend(event.message)
+      setChats((prev) =>
+        prev.map((c) => {
+          if (c.id !== event.chatId) return c
+          if (c.messages.some((m) => m.id === incoming.id)) return c
+          const isActive = event.chatId === selectedId
+          return {
+            ...c,
+            messages: isActive ? [...c.messages, incoming] : c.messages,
+            subtitle: incoming.text ?? c.subtitle,
+            time: 'now',
+            unread: isActive ? 0 : (c.unread ?? 0) + 1,
+            typing: false,
+          }
+        }),
+      )
+    },
+  })
 
   const selectedChat = chats.find((c) => c.id === selectedId) ?? null
 
@@ -119,58 +276,44 @@ export default function Messenger({
     setReplyTo(null)
 
     try {
-      await api.sendDemoMessage({
+      const ack = await api.sendMessage({
         chatId: currentChatId,
         text,
         clientOperationId: id,
         ...(currentReplyId ? { replyTo: currentReplyId } : {}),
       })
-      updateStatus(id, 'sent', currentChatId)
+      // Replace optimistic bubble with server-acknowledged record (stable id, sent status).
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === currentChatId
+            ? {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.id === id ? { ...m, id: ack.id, status: 'sent' as const } : m,
+                ),
+              }
+            : c,
+        ),
+      )
       setTimeout(() => updateStatus(id, 'read', currentChatId), 1200)
+
+      // Refresh history to surface the server-generated peer reply (if any).
+      setTimeout(async () => {
+        try {
+          const fresh = await api.getHistory(currentChatId, { limit: 50 })
+          setChats((prev) =>
+            prev.map((c) =>
+              c.id === currentChatId
+                ? { ...c, messages: fresh.messages.map(messageToFrontend) }
+                : c,
+            ),
+          )
+        } catch {
+          /* ignore — periodic refresh will recover */
+        }
+      }, 3500)
     } catch {
       updateStatus(id, 'failed', currentChatId)
-      return
-    }
-
-    // Simulate typing + reply only after the server acknowledges the demo send.
-    if (selectedChat.kind === 'private') {
-      setTimeout(() => {
-        setChats((prev) => prev.map((c) => (c.id === selectedChat.id ? { ...c, typing: true } : c)))
-      }, 1200)
-      setTimeout(() => {
-        const replies = [
-          'Got it 👍',
-          'Haha 😂',
-          'Sounds great!',
-          'Let me check and get back to you.',
-          'Thanks for letting me know!',
-          'On my way 🏃',
-          'Perfect timing!',
-          '🙌',
-        ]
-        const replyText = replies[Math.floor(Math.random() * replies.length)] ?? 'Got it 👍'
-        const reply: Message = {
-          id: 'r' + Date.now(),
-          authorId: selectedChat.id,
-          kind: 'text',
-          text: replyText,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        }
-        setChats((prev) =>
-          prev.map((c) =>
-            c.id === selectedChat.id
-              ? {
-                  ...c,
-                  typing: false,
-                  messages: [...c.messages, reply],
-                  subtitle: replyText,
-                  time: 'now',
-                  unread: 0,
-                }
-              : c,
-          ),
-        )
-      }, 2800)
     }
   }
 
@@ -337,7 +480,29 @@ export default function Messenger({
 
         {/* Chat list */}
         <div className="flex-1 overflow-y-auto slim-scroll">
-          {filteredChats.length === 0 && (
+          {dialogsLoading && (
+            <div className="text-center py-12 px-6">
+              <div className="mx-auto h-10 w-10 rounded-full border-2 border-brand-500 border-t-transparent animate-spin mb-3" />
+              <div className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                Loading chats…
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Fetching your dialogs from Telegram
+              </div>
+            </div>
+          )}
+          {!dialogsLoading && dialogsError && (
+            <div className="text-center py-10 px-6">
+              <div className="mx-auto h-12 w-12 rounded-full bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center mb-3">
+                <Search2 className="h-5 w-5 text-rose-500" />
+              </div>
+              <div className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                Could not load dialogs
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">{dialogsError}</div>
+            </div>
+          )}
+          {!dialogsLoading && !dialogsError && filteredChats.length === 0 && (
             <div className="text-center py-12 px-6">
               <div className="mx-auto h-12 w-12 rounded-full bg-slate-100 dark:bg-[#1f2c33] flex items-center justify-center mb-3">
                 <Search2 className="h-5 w-5 text-slate-400" />

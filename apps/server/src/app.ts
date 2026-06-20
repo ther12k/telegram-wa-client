@@ -2,9 +2,36 @@ import { demoSendSchema } from '@telewa/contracts'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { cors } from 'hono/cors'
+import { FakeTelegramAdapter } from './adapters/fake-telegram'
+import { FixtureDialogProvider } from './adapters/dialogs'
+import { InMemoryMessageProvider } from './adapters/messages'
+import { createAuthRouter } from './routes/auth'
+import { createDialogRouter } from './routes/dialogs'
+import { createMessagesRouter } from './routes/messages'
+import { RealtimeBus } from './realtime/bus'
+import { createRealtimeRouter } from './routes/realtime'
 
 export type Bindings = { Variables: { requestId: string } }
 export const app = new Hono<Bindings>()
+
+export const telegramAdapter = new FakeTelegramAdapter()
+export const dialogProvider = new FixtureDialogProvider()
+export const messageProvider = new InMemoryMessageProvider()
+export const realtimeBus = new RealtimeBus()
+
+const isAuthenticated = async () =>
+  (await telegramAdapter.getAuthState()).status === 'authenticated'
+
+// Keep providers in sync with the auth state so messaging requires sign-in.
+telegramAdapter.subscribe((state) => {
+  dialogProvider.setAuthState(state.status)
+  messageProvider.setAuthenticated(state.status === 'authenticated')
+})
+
+// Broadcast every new message to realtime subscribers.
+messageProvider.setMessageListener((message) => {
+  realtimeBus.publish({ type: 'message.new', chatId: message.chatId, message })
+})
 
 app.use('*', async (c, next) => {
   const requestId = c.req.header('x-request-id')?.slice(0, 128) || crypto.randomUUID()
@@ -13,6 +40,11 @@ app.use('*', async (c, next) => {
   await next()
 })
 app.use('/api/*', cors({ origin: ['http://localhost:5173'], credentials: true }))
+
+app.route('/api/auth', createAuthRouter(telegramAdapter))
+app.route('/api/dialogs', createDialogRouter(dialogProvider, isAuthenticated))
+app.route('/api/messages', createMessagesRouter(messageProvider, isAuthenticated))
+app.route('/api/realtime', createRealtimeRouter(realtimeBus, isAuthenticated))
 
 const ok = <T>(c: Context<Bindings>, data: T, status: 200 | 201 = 200) =>
   c.json({ success: true as const, data, meta: { requestId: c.get('requestId') } }, status)

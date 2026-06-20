@@ -10,19 +10,18 @@ type Network = 'online' | 'offline' | 'reconnecting'
 type Overlay = 'loading' | 'empty' | 'error' | 'offline' | 'reconnecting' | null
 
 export default function App() {
-  const [stage, setStage] = useState<Stage>(() => {
-    return typeof window !== 'undefined' && sessionStorage.getItem('tt_stage') === 'app'
-      ? 'app'
-      : 'onboarding'
-  })
+  const [stage, setStage] = useState<Stage>('onboarding')
   const [dark, setDark] = useState(false)
   const [network, setNetwork] = useState<Network>('online')
   const [overlay, setOverlay] = useState<Overlay>(null)
   const [projectState, setProjectState] = useState<ProjectState | null>(null)
   const [serverOnline, setServerOnline] = useState(false)
 
+  // Fetch initial project state and sync active authentication stage
   useEffect(() => {
     let active = true
+
+    // Sync initial API version / project info
     api
       .projectState()
       .then((state) => {
@@ -34,6 +33,26 @@ export default function App() {
         if (!active) return
         setServerOnline(false)
       })
+
+    // Fetch initial auth state from backend to see if we're already logged in
+    const syncAuth = async () => {
+      try {
+        const state = await api.getAuthState()
+        if (!active) return
+        if (state.status === 'authenticated') {
+          setStage('app')
+        } else {
+          setStage('onboarding')
+        }
+      } catch {
+        // Fallback to local storage/session storage if backend check fails
+        if (typeof window !== 'undefined' && sessionStorage.getItem('tt_stage') === 'app') {
+          setStage('app')
+        }
+      }
+    }
+    syncAuth()
+
     return () => {
       active = false
     }
@@ -49,7 +68,6 @@ export default function App() {
     const h = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        // let Messenger handle via its own listener if app is active
       }
     }
     window.addEventListener('keydown', h)
@@ -64,17 +82,22 @@ export default function App() {
       try {
         sessionStorage.setItem('tt_stage', 'app')
       } catch {
-        // sessionStorage unavailable; ignore.
+        // ignored
       }
     }, 900)
   }
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await api.logout()
+    } catch (err) {
+      console.error('Failed to log out cleanly from server', err)
+    }
     setStage('onboarding')
     try {
       sessionStorage.removeItem('tt_stage')
     } catch {
-      // sessionStorage unavailable; ignore.
+      // ignored
     }
   }
 
