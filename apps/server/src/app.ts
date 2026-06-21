@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { cors } from 'hono/cors'
 import { FakeTelegramAdapter } from './adapters/fake-telegram'
+import { MtcuteTelegramAdapter, sanitizeMtcuteError } from './adapters/mtcute-telegram'
 import { FixtureDialogProvider } from './adapters/dialogs'
 import { InMemoryMessageProvider } from './adapters/messages'
 import { createAuthRouter } from './routes/auth'
@@ -17,7 +18,66 @@ import { rateLimiter, securityHeaders, structuredLogger } from './hardening'
 export type Bindings = { Variables: { requestId: string } }
 export const app = new Hono<Bindings>()
 
-export const telegramAdapter = new FakeTelegramAdapter()
+// Adapter selection: real Telegram if creds are present, fake otherwise.
+// Production must have either real creds OR DEMO_MODE=true (explicit opt-in).
+const apiId = Number(process.env.TELEGRAM_API_ID)
+const apiHash = process.env.TELEGRAM_API_HASH?.trim() || ''
+const hasRealCreds = Number.isFinite(apiId) && apiId > 0 && /^[a-f0-9]{32}$/i.test(apiHash)
+const isProduction = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production'
+const demoMode = process.env.DEMO_MODE === 'true'
+
+if (isProduction && !hasRealCreds && !demoMode) {
+  console.error(
+    'FATAL: production startup with no TELEGRAM_API_ID/HASH and no DEMO_MODE. ' +
+      'Refusing to run with FakeTelegramAdapter in production. Set DEMO_MODE=true to override.',
+  )
+  process.exit(1)
+}
+
+if (hasRealCreds) {
+  console.info(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      event: 'telegram.adapter.selected',
+      adapter: 'mtcute',
+      apiIdPresent: true,
+      apiHashPresent: true,
+    }),
+  )
+} else {
+  console.warn(
+    'WARNING: RUNNING WITH FAKE TELEGRAM ADAPTER. ' +
+      'Any code 11111 logs in as the demo user. ' +
+      'Set TELEGRAM_API_ID and TELEGRAM_API_HASH to connect a real account.',
+  )
+  console.info(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'warn',
+      event: 'telegram.adapter.selected',
+      adapter: 'fake',
+      reason: !hasRealCreds ? 'missing TELEGRAM_API_ID or TELEGRAM_API_HASH' : 'unknown',
+    }),
+  )
+}
+
+export const telegramAdapter = hasRealCreds
+  ? (() => {
+      try {
+        return new MtcuteTelegramAdapter({
+          apiId,
+          apiHash,
+          sessionDbPath: process.env.SESSION_DB_PATH ?? './telewa-session/session.db',
+        })
+      } catch (err) {
+        // If creds are malformed, we already exited above. Reaching here means
+        // the validator passed but mtcute failed to initialize. Log and fall back.
+        console.error('mtcute adapter init failed (sanitized):', sanitizeMtcuteError(err))
+        return new FakeTelegramAdapter()
+      }
+    })()
+  : new FakeTelegramAdapter()
 export const dialogProvider = new FixtureDialogProvider()
 export const messageProvider = new InMemoryMessageProvider()
 export const mediaStore = new InMemoryMediaStore()
