@@ -5,6 +5,11 @@ services:
       APP_ENV: production
       PORT: 3001
       DEMO_MODE: 'true'
+      # Real Telegram (MTProto) — leave blank to fall back to FakeTelegramAdapter
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+      # 32-byte hex; generate with: openssl rand -hex 32
+      SESSION_ENCRYPTION_KEY: ${SESSION_ENCRYPTION_KEY:-}
     ports:
       - '3001:3001'
     healthcheck:
