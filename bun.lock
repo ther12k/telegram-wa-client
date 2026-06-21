@@ -20,6 +20,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@mtcute/node": "0.8.0",
+        "@mtcute/sqlite": "0.8.0",
         "@telewa/contracts": "workspace:*",
         "hono": "4.12.26",
         "zod": "4.4.3",
@@ -207,7 +208,7 @@
 
     "@mtcute/sqlite": ["@mtcute/sqlite@0.8.0", "", { "dependencies": { "@mtcute/core": "^0.8.0", "@mtcute/tl": "*", "@mtcute/tl-runtime": "^0.8.0", "better-sqlite3": "9.2.2" } }, "sha512-uBfuvRZmUfpIX2sa8xTh504hhazUaE7Df64dO1QipnaIycVYltuigqfO/zr+yhkV3mrehE3wufmNAGFnQug6kA=="],
 
-    "@mtcute/tl": ["@mtcute/tl@176.0.0", "", { "dependencies": { "long": "5.2.3" } }, "sha512-68Wbwv9u9RewYsQhfIRLKKniyE6HNUgMSUVgQLrchfg6mzTaSnlkXMEEP4sQ43+ITC04YoMaLZPP/f2rlYrLvw=="],
+    "@mtcute/tl": ["@mtcute/tl@223.0.0", "", { "dependencies": { "long": "5.2.3" } }, "sha512-RBppaVVpp+YsGC5PTsZ2hk1NI4rI0iAj7ll9urbUmII9OCaOMSswiF9ZcjQ1aQhofey8Im87DRhxpiBZQ4OEUg=="],
 
     "@mtcute/tl-runtime": ["@mtcute/tl-runtime@0.8.0", "", { "dependencies": { "long": "5.2.3" } }, "sha512-UAB+gPN2szyhozCiKuaOS1NNSvyZIYDTlL3LjcLj75RzQSNFsGcES3TT0Tsoi1RPXMt3I7f0bg0PTvk3jBptMg=="],
 
@@ -775,7 +776,7 @@
 
     "@eslint-community/eslint-utils/eslint-visitor-keys": ["eslint-visitor-keys@3.4.3", "", {}, "sha512-wpc+LXeiyiisxPlEkUzU6svyS1frIO3Mgxj1fdy7Pm8Ygzguax2N3Fa/D/ag1WqbOprdI+uY6wMUl8/a2G+iag=="],
 
-    "@mtcute/sqlite/@mtcute/tl": ["@mtcute/tl@223.0.0", "", { "dependencies": { "long": "5.2.3" } }, "sha512-RBppaVVpp+YsGC5PTsZ2hk1NI4rI0iAj7ll9urbUmII9OCaOMSswiF9ZcjQ1aQhofey8Im87DRhxpiBZQ4OEUg=="],
+    "@mtcute/core/@mtcute/tl": ["@mtcute/tl@176.0.0", "", { "dependencies": { "long": "5.2.3" } }, "sha512-68Wbwv9u9RewYsQhfIRLKKniyE6HNUgMSUVgQLrchfg6mzTaSnlkXMEEP4sQ43+ITC04YoMaLZPP/f2rlYrLvw=="],
 
     "@tailwindcss/oxide-wasm32-wasi/@emnapi/core": ["@emnapi/core@1.11.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" }, "bundled": true }, "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ=="],
 

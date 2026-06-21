@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@mtcute/node": "0.8.0",
+    "@mtcute/sqlite": "0.8.0",
     "@telewa/contracts": "workspace:*",
     "hono": "4.12.26",
     "zod": "4.4.3"
