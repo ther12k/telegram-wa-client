@@ -47,6 +47,9 @@ class FakeMtcuteClient implements MtcuteClientSurface {
   async markChatUnread(): Promise<void> {
     /* no-op */
   }
+  async resolvePeer(peer: number): Promise<{ _: 'inputPeerUser'; user_id: number }> {
+    return { _: 'inputPeerUser', user_id: peer }
+  }
   async call<T = unknown>(method: string, params: Record<string, unknown>): Promise<T> {
     this.calls.push({ method, params })
     return undefined as T
@@ -190,13 +193,18 @@ describe('MtcuteDialogProvider', () => {
       expect(client.calls).toHaveLength(0)
     })
 
-    it('pinned=true calls messages.toggleDialogPin via TL', async () => {
+    it('pinned=true resolves peer then calls messages.toggleDialogPin via TL', async () => {
       const client = new FakeMtcuteClient()
       const p = new MtcuteDialogProvider(client)
       await p.updateDialog('123', { pinned: true })
+      // R1 fix: peer must be the target chat wrapped as inputDialogPeer,
+      // not inputPeerSelf (which would pin Saved Messages).
       expect(client.calls).toContainEqual({
         method: 'messages.toggleDialogPin',
-        params: { peer: { _: 'inputPeerSelf' }, pinned: true },
+        params: {
+          peer: { _: 'inputDialogPeer', peer: { _: 'inputPeerUser', user_id: 123 } },
+          pinned: true,
+        },
       })
     })
 
@@ -212,6 +220,21 @@ describe('MtcuteDialogProvider', () => {
       const client = new FakeMtcuteClient()
       const p = new MtcuteDialogProvider(client)
       await expect(p.updateDialog('789', { muted: true })).rejects.toThrow(/not yet implemented/)
+    })
+
+    it('muted throws BEFORE any side-effect (R3: no partial mutation)', async () => {
+      // Combined update with muted alongside pinned/archived/unread.
+      // R3: muted must validate first so Telegram state is not half-mutated.
+      const client = new FakeMtcuteClient()
+      const p = new MtcuteDialogProvider(client)
+      await expect(
+        p.updateDialog('100', { pinned: true, archived: false, unread: 1, muted: true }),
+      ).rejects.toThrow(/not yet implemented/)
+      // No TL call should have fired for pinned, no archiveChats, no markChatUnread.
+      expect(client.calls).toHaveLength(0)
+      expect(client.calls).not.toContainEqual(
+        expect.objectContaining({ method: 'messages.toggleDialogPin' }),
+      )
     })
   })
 

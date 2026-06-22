@@ -61,6 +61,9 @@ class FakeMtcuteClient implements MtcuteClientSurface {
   async markChatUnread(): Promise<void> {
     /* no-op */
   }
+  async resolvePeer(peer: number): Promise<{ _: 'inputPeerUser'; user_id: number }> {
+    return { _: 'inputPeerUser', user_id: peer }
+  }
   async call<T = unknown>(_method: string, _params: Record<string, unknown>): Promise<T> {
     return undefined as T
   }

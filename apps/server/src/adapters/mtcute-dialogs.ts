@@ -36,8 +36,17 @@ export interface MtcuteClientSurface {
   ): Promise<void>
   archiveChats(peers: MtcuteInputPeerLike[], params?: { unarchive?: boolean }): Promise<void>
   markChatUnread(peer: MtcuteInputPeerLike): Promise<void>
+  /** Resolve a peer (id/username/phone) to its current tl.TypeInputPeer. */
+  resolvePeer(peer: MtcuteInputPeerLike): Promise<TlInputPeer>
   call<T = unknown>(method: string, params: Record<string, unknown>): Promise<T>
 }
+
+/** Mirror of mtcute's tl.TypeInputPeer — just the variants we construct. */
+export type TlInputPeer =
+  | { _: 'inputPeerSelf' }
+  | { _: 'inputPeerUser'; user_id: number }
+  | { _: 'inputPeerChat'; chat_id: number }
+  | { _: 'inputPeerChannel'; channel_id: number; access_hash: string | number }
 
 export type MtcuteInputPeerLike = string | number
 
@@ -141,13 +150,30 @@ export class MtcuteDialogProvider {
     chatId: string,
     updates: Partial<Pick<Dialog, 'pinned' | 'muted' | 'archived' | 'unread'>>,
   ): Promise<Dialog | null> {
+    // Validate first — muted is not yet implemented and must NOT run after
+    // partial side-effects (Pi R3).
+    if (typeof updates.muted === 'boolean') {
+      // No high-level wrapper in mtcute 0.8.0. The TL path is:
+      //   account.updateNotifySettings({ peer: inputNotifyPeer, settings: inputPeerNotifySettings })
+      // TODO: wire via this.client.call('account.updateNotifySettings', {...})
+      // Tracked in docs/REAL-TELEGRAM-PLAN.md.
+      throw new Error(
+        'updateDialog(muted) is not yet implemented in MtcuteDialogProvider — ' +
+          'tracked in docs/REAL-TELEGRAM-PLAN.md',
+      )
+    }
+
     const peer = parseChatId(chatId)
     if (peer === null) return null
 
     if (typeof updates.pinned === 'boolean') {
-      // No high-level wrapper in mtcute 0.8.0; use the TL method directly.
+      // messages.toggleDialogPin expects {peer: InputDialogPeer} where
+      // InputDialogPeer wraps the resolved InputPeer for the target chat.
+      // Using inputPeerSelf here would pin/unpin Saved Messages, not the
+      // requested chat (Pi R1).
+      const inputPeer = await this.client.resolvePeer(peer)
       await this.client.call('messages.toggleDialogPin', {
-        peer: { _: 'inputPeerSelf' },
+        peer: { _: 'inputDialogPeer', peer: inputPeer },
         pinned: updates.pinned,
       })
     }
@@ -165,16 +191,6 @@ export class MtcuteDialogProvider {
         await this.client.readHistory(peer)
       }
     }
-    if (typeof updates.muted === 'boolean') {
-      // No high-level wrapper in mtcute 0.8.0. The TL path is:
-      //   account.updateNotifySettings({ peer: inputNotifyPeer, settings: inputPeerNotifySettings })
-      // TODO: wire via this.client.call('account.updateNotifySettings', {...})
-      // Tracked in docs/REAL-TELEGRAM-PLAN.md.
-      throw new Error(
-        'updateDialog(muted) is not yet implemented in MtcuteDialogProvider — ' +
-          'tracked in docs/REAL-TELEGRAM-PLAN.md',
-      )
-    }
 
     // Best-effort echo of the new flags. Route layer can re-list if it
     // needs canonical state from Telegram.
@@ -184,7 +200,7 @@ export class MtcuteDialogProvider {
       lastMessage: null,
       unread: updates.unread ?? 0,
       pinned: updates.pinned ?? false,
-      muted: updates.muted ?? false,
+      muted: false,
       archived: updates.archived ?? false,
     }
   }
