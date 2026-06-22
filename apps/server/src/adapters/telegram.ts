@@ -31,4 +31,10 @@ export interface TelegramAdapter {
    * Logs out from Telegram, destroying current session on the server.
    */
   logout(): Promise<void>
+
+  /**
+   * Subscribes to auth state changes. Returns an unsubscribe function.
+   * Used by app.ts to bridge adapter auth state into HTTP responses / SSE.
+   */
+  subscribe(handler: (state: AuthState) => void): () => void
 }
