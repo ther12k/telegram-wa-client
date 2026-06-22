@@ -1,5 +1,6 @@
 import type { Dialog, DialogList, LastMessage, Peer } from '@telewa/contracts'
 import type { TelegramClient } from '@mtcute/node'
+import type { DialogProvider } from './dialogs'
 
 /**
  * Minimal typed interface over the subset of mtcute's TelegramClient
@@ -109,18 +110,37 @@ export function asMtcuteSurface(client: TelegramClient): MtcuteClientSurface {
  * provider is only invoked when the user is authenticated (the routes
  * gate on it).
  */
-export class MtcuteDialogProvider {
-  constructor(private readonly client: MtcuteClientSurface) {}
+export class MtcuteDialogProvider implements DialogProvider {
+  /**
+   * Thunk-based constructor: stores a function that returns the live
+   * MtcuteClientSurface on each call. This means:
+   *   1. The adapter's lazy client lifecycle (null until first
+   *      sendCode) is respected — we never call getClient() at boot.
+   *   2. After MtcuteTelegramAdapter.logout() → re-login → fresh
+   *      client, providers pick it up automatically without rewiring.
+   *
+   * Story 3 (round 9 plan). See apps/server/src/app.ts:81-82.
+   */
+  constructor(private readonly client: () => MtcuteClientSurface) {}
 
   // DialogProvider expects setAuthState but this provider doesn't gate
   // on auth — the surrounding MtcuteTelegramAdapter + routes handle that.
-  setAuthState(_status: 'authenticated' | 'unauthenticated' | 'requires_code'): void {
+  // Accepts the full AuthState['status'] union so the app.ts subscribe
+  // callback can pass state.status unchanged (Pi Story 3 typecheck).
+  setAuthState(
+    _status:
+      | 'unauthenticated'
+      | 'requires_code'
+      | 'requires_password'
+      | 'requires_qr'
+      | 'authenticated',
+  ): void {
     /* no-op */
   }
 
   async getCurrentUser(): Promise<{ id: string; title: string; initials: string } | null> {
     try {
-      const me = await this.client.getMe()
+      const me = await this.client().getMe()
       return {
         id: String(me.id),
         title: me.displayName,
@@ -136,7 +156,7 @@ export class MtcuteDialogProvider {
     let total = 0
     // iterDialogs is anti-chronological (Telegram API limit). Cap at 200
     // to match what the fixture provider offers.
-    for await (const mt of this.client.iterDialogs({ limit: 200 })) {
+    for await (const mt of this.client().iterDialogs({ limit: 200 })) {
       const mapped = mapDialog(mt)
       if (mapped) {
         dialogs.push(mapped)
@@ -171,8 +191,8 @@ export class MtcuteDialogProvider {
       // InputDialogPeer wraps the resolved InputPeer for the target chat.
       // Using inputPeerSelf here would pin/unpin Saved Messages, not the
       // requested chat (Pi R1).
-      const inputPeer = await this.client.resolvePeer(peer)
-      await this.client.call('messages.toggleDialogPin', {
+      const inputPeer = await this.client().resolvePeer(peer)
+      await this.client().call('messages.toggleDialogPin', {
         peer: { _: 'inputDialogPeer', peer: inputPeer },
         pinned: updates.pinned,
       })
@@ -180,15 +200,15 @@ export class MtcuteDialogProvider {
     if (typeof updates.archived === 'boolean') {
       // updates.archived = true  → archive   → unarchive: false
       // updates.archived = false → unarchive → unarchive: true
-      await this.client.archiveChats([peer], { unarchive: !updates.archived })
+      await this.client().archiveChats([peer], { unarchive: !updates.archived })
     }
     if (typeof updates.unread === 'boolean') {
       // markChatUnread toggles the unread flag; clearing unread is via
       // readHistory (which is the typical "mark all as read" path).
       if (updates.unread) {
-        await this.client.markChatUnread(peer)
+        await this.client().markChatUnread(peer)
       } else {
-        await this.client.readHistory(peer)
+        await this.client().readHistory(peer)
       }
     }
 
@@ -209,7 +229,7 @@ export class MtcuteDialogProvider {
     const peer = parseChatId(chatId)
     if (peer === null) return false
     // justClear: false → also delete for the other side where possible.
-    await this.client.deleteHistory(peer, { justClear: false, revoke: true })
+    await this.client().deleteHistory(peer, { justClear: false, revoke: true })
     return true
   }
 }

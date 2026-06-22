@@ -4,6 +4,12 @@ import type { Context } from 'hono'
 import { cors } from 'hono/cors'
 import { FakeTelegramAdapter } from './adapters/fake-telegram'
 import { MtcuteTelegramAdapter, sanitizeMtcuteError } from './adapters/mtcute-telegram'
+import {
+  MtcuteDialogProvider,
+  asMtcuteSurface,
+  type MtcuteClientSurface,
+} from './adapters/mtcute-dialogs'
+import { MtcuteMessageProvider } from './adapters/mtcute-messages'
 import { FixtureDialogProvider } from './adapters/dialogs'
 import { InMemoryMessageProvider } from './adapters/messages'
 import { createAuthRouter } from './routes/auth'
@@ -96,8 +102,27 @@ export const telegramAdapter = hasRealCreds
       }
     })()
   : new FakeTelegramAdapter()
-export const dialogProvider = new FixtureDialogProvider()
-export const messageProvider = new InMemoryMessageProvider()
+// Provider selection: real Telegram if creds are present, fake otherwise.
+// Production must have either real creds OR DEMO_MODE=true (explicit opt-in).
+// Mtcute providers take a thunk over telegramAdapter.getClient() so the
+// adapter's lazy client lifecycle is transparent (Story 3, round 9 plan).
+//
+// `telegramAdapter` is typed as the union `MtcuteTelegramAdapter |
+// FakeTelegramAdapter` because the hasRealCreds branch falls back to
+// FakeTelegramAdapter in the try/catch around construction. We narrow
+// with `instanceof` so the call to `getClient()` is type-safe.
+const getMtcuteSurface = (): MtcuteClientSurface => {
+  if (!(telegramAdapter instanceof MtcuteTelegramAdapter)) {
+    throw new Error('getMtcuteSurface called without real credentials — app.ts wiring bug')
+  }
+  return asMtcuteSurface(telegramAdapter.getClient())
+}
+export const dialogProvider = hasRealCreds
+  ? new MtcuteDialogProvider(getMtcuteSurface)
+  : new FixtureDialogProvider()
+export const messageProvider = hasRealCreds
+  ? new MtcuteMessageProvider(getMtcuteSurface)
+  : new InMemoryMessageProvider()
 export const mediaStore = new InMemoryMediaStore()
 export const realtimeBus = new RealtimeBus()
 
