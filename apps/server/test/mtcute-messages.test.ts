@@ -89,7 +89,7 @@ describe('MtcuteMessageProvider', () => {
   describe('getHistory', () => {
     it('returns empty for non-numeric chatId', async () => {
       const client = new FakeMtcuteClient()
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       const result = await p.getHistory('not-a-number')
       expect(result).toEqual({ messages: [], cursor: null, hasMore: false })
     })
@@ -100,7 +100,7 @@ describe('MtcuteMessageProvider', () => {
         msg({ id: 11, text: 'hi there', sender: { id: 50 }, isOutgoing: false, chatId: 100 }),
         msg({ id: 12, text: 'you there?', sender: { id: 50 }, isOutgoing: true, chatId: 100 }),
       ]
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       const result = await p.getHistory('100', { limit: 50 })
       expect(result.messages).toHaveLength(2)
       expect(result.messages[0]).toMatchObject({
@@ -118,7 +118,7 @@ describe('MtcuteMessageProvider', () => {
     it('filters out empty-text messages', async () => {
       const client = new FakeMtcuteClient()
       client.history['100'] = [msg({ id: 1, text: 'visible' }), msg({ id: 2, text: '' })]
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       const result = await p.getHistory('100')
       expect(result.messages).toHaveLength(1)
       expect(result.messages[0]?.text).toBe('visible')
@@ -127,7 +127,7 @@ describe('MtcuteMessageProvider', () => {
     it('passes cursor as offsetId when present', async () => {
       const client = new FakeMtcuteClient()
       const spy = vi.spyOn(client, 'getHistory')
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       await p.getHistory('100', { cursor: '500' })
       expect(spy).toHaveBeenCalledWith(100, { limit: 50, offsetId: 500 })
     })
@@ -137,7 +137,7 @@ describe('MtcuteMessageProvider', () => {
       client.history['100'] = Array.from({ length: 50 }, (_, i) =>
         msg({ id: i + 1, text: `m${i}` }),
       )
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       const result = await p.getHistory('100', { limit: 50 })
       expect(result.hasMore).toBe(true)
       expect(result.cursor).toBe('50')
@@ -146,7 +146,7 @@ describe('MtcuteMessageProvider', () => {
     it('returns hasMore=false when result is under limit', async () => {
       const client = new FakeMtcuteClient()
       client.history['100'] = [msg({ id: 1, text: 'only one' })]
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       const result = await p.getHistory('100', { limit: 50 })
       expect(result.hasMore).toBe(false)
       expect(result.cursor).toBeNull()
@@ -157,7 +157,7 @@ describe('MtcuteMessageProvider', () => {
     it('sends text via client.sendText', async () => {
       const client = new FakeMtcuteClient()
       const spy = vi.spyOn(client, 'sendText')
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       const result = await p.sendMessage({
         chatId: '100',
         text: 'hello world',
@@ -171,7 +171,7 @@ describe('MtcuteMessageProvider', () => {
 
     it('passes replyTo when provided', async () => {
       const client = new FakeMtcuteClient()
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       await p.sendMessage({
         chatId: '100',
         text: 'reply',
@@ -183,7 +183,7 @@ describe('MtcuteMessageProvider', () => {
 
     it('throws INVALID_CHAT_ID for non-numeric chatId', async () => {
       const client = new FakeMtcuteClient()
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       await expect(
         p.sendMessage({
           chatId: 'oops',
@@ -198,7 +198,7 @@ describe('MtcuteMessageProvider', () => {
     it('calls readHistory for valid numeric chatId', async () => {
       const client = new FakeMtcuteClient()
       const spy = vi.spyOn(client, 'readHistory')
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       await p.markRead('100')
       expect(spy).toHaveBeenCalledWith(100)
     })
@@ -206,7 +206,7 @@ describe('MtcuteMessageProvider', () => {
     it('is a no-op for non-numeric chatId', async () => {
       const client = new FakeMtcuteClient()
       const spy = vi.spyOn(client, 'readHistory')
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       await p.markRead('oops')
       expect(spy).not.toHaveBeenCalled()
     })
@@ -215,7 +215,7 @@ describe('MtcuteMessageProvider', () => {
   describe('searchMessages', () => {
     it('returns empty for empty query', async () => {
       const client = new FakeMtcuteClient()
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       expect(await p.searchMessages('   ')).toEqual([])
     })
 
@@ -226,7 +226,7 @@ describe('MtcuteMessageProvider', () => {
         msg({ id: 2, text: 'goodbye' }),
         msg({ id: 3, text: 'say HELLO again' }),
       ]
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       const results = await p.searchMessages('hello')
       expect(results).toHaveLength(2)
       expect(results.map((r) => r.id).sort()).toEqual(['1', '3'])
@@ -235,7 +235,7 @@ describe('MtcuteMessageProvider', () => {
     it('calls searchGlobal with trimmed query', async () => {
       const client = new FakeMtcuteClient()
       const spy = vi.spyOn(client, 'searchGlobal')
-      const p = new MtcuteMessageProvider(client)
+      const p = new MtcuteMessageProvider(() => client)
       await p.searchMessages('  pizza party  ')
       expect(spy).toHaveBeenCalledWith({ q: 'pizza party', limit: 50 })
     })

@@ -72,6 +72,26 @@ export class MtcuteTelegramAdapter implements TelegramAdapter {
     }
   }
 
+  /**
+   * Returns the live TelegramClient. Throws if the client has not been
+   * initialised yet (i.e. before the first sendCode() call).
+   *
+   * Accessor — not a public field — so the lifecycle stays inside the
+   * adapter. The logout() → re-login flow nulls and re-creates `client`
+   * transparently; callers using a thunk over this getter will pick up
+   * the new instance without rewiring.
+   *
+   * Story 3 (round 9 plan): the MtcuteDialogProvider / MtcuteMessageProvider
+   * take a `() => TelegramClient` thunk and call this on every request,
+   * so callers never need to track the client lifecycle themselves.
+   */
+  getClient(): TelegramClient {
+    if (!this.client) {
+      throw new Error('MtcuteTelegramAdapter client not initialised — call sendCode first')
+    }
+    return this.client
+  }
+
   private ensureClient(): TelegramClient {
     if (!this.client) {
       this.client = new TelegramClient({

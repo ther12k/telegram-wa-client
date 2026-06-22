@@ -84,3 +84,56 @@ Before Story 2 can be integration-tested, the user must provide:
 Get from **https://my.telegram.org** → log in with your Telegram account → "API development tools" → "Create new application".
 
 Also a real phone number reachable for SMS (Telegram sends the code there on first login). The user has not provided these yet.
+
+## Shipped since this plan was written
+
+- **Story 1 (deps + adapter + env scaffolding)** — DONE, PR #3 merged to main at `fc6ee75`. Includes 3 Pi round-1 fixes + better-sqlite3 override for Node 22 build (PR #3 round 4).
+- **Story 2 (MtcuteDialogProvider + MtcuteMessageProvider)** — DONE, PR #4 merged to main at `9e244b6`. 28 new tests (94 total). Includes 3 Pi round-5 fixes (R1 pin-peer, R2 test, R3 muted-ordering).
+- **Story 3 (wiring in app.ts)** — in flight, branch `real-telegram/story-3-wiring`. See "Current wiring" below.
+
+### Current wiring (after Story 3)
+
+`apps/server/src/app.ts` constructs providers based on `hasRealCreds`:
+
+```ts
+export const dialogProvider = hasRealCreds
+  ? new MtcuteDialogProvider(() => asMtcuteSurface(telegramAdapter.getClient()))
+  : new FixtureDialogProvider()
+export const messageProvider = hasRealCreds
+  ? new MtcuteMessageProvider(() => asMtcuteSurface(telegramAdapter.getClient()))
+  : new InMemoryMessageProvider()
+```
+
+Mtcute providers take a `() => MtcuteClientSurface` **thunk** (not a captured client) so the adapter's lazy-init + logout-recreate lifecycle is transparent. See "Known sharp edges" below.
+
+The `telegramAdapter.subscribe(...)` block at app.ts:84 still calls `setAuthState` / `setAuthenticated` on both providers. Mtcute providers no-op these (correct — routes gate on auth). Fixture path unchanged.
+
+## Known sharp edges
+
+Resolved by Story 3's thunk design:
+
+- ~~**Stale client reference after logout.**~~ ~~Mtcute providers held a captured client. After `MtcuteTelegramAdapter.logout()` → re-login, the captured reference was stale.~~ **Resolution:** Thunk-based constructor — client is re-fetched on every call via `telegramAdapter.getClient()`. The sharp edge is precluded by design, not fixed in code.
+
+Still open (carried from earlier rounds):
+
+- **Muted not implemented.** `updateDialog({muted})` throws "not yet implemented". TL path is `account.updateNotifySettings`. Tracked for Story 4+ (or wherever mute lands).
+- **200-cap on iterDialogs.** Mtcute dialogs are anti-chronological and capped at 200 in the current implementation. No cursor pagination. Tracked — fixture path returns 5, so the jump to ≤200 prod dialogs is silent.
+- **100ms setTimeout race in submitCode/submitPassword.** Should poll `getAuthState()` or await `client.start()` promise. Cosmetic, rare.
+- **HTTP-layer auth before prod real-Telegram use.** Public URL → logged-in account is a real attack surface. Server-side app password OR reverse-proxy auth needed. BIG.
+- **Per-IP/per-phone rate limits on `/api/auth/*`.** Current rate limit is generic 200/min. Real Telegram code/password endpoints need stricter throttling to reduce flood-wait / account-ban risk.
+- **Broader log sanitization.** `sanitizeMtcuteError` covers most paths but `app.ts` selection log line + 100ms-poll path don't sanitize. Low risk in practice (the values logged are booleans), keep an eye.
+- **Session directory permissions** (Story 6 territory). `.gitignore` already covers `telewa-session/` etc.
+- **Singleton provider lifecycle for mtcute** (Pi Story 1 concern O6). With the thunk design, the lifecycle is encapsulated inside the adapter; providers don't need their own startup/shutdown hooks. Revisit if tests show flakiness from hot-reload.
+- **Health/version/project-state strings still say "Phase 0"** + `demoMode: true` + `telegram: "not-configured"`. Cosmetic but misleading in real-mode deploys. Tracked.
+- **Story 7 not yet implemented.** Real-time updates (mtcute UpdateHandler → RealtimeRouter) are still pending. Until Story 7 lands, real-Telegram users won't see new messages until they refresh the page.
+
+## File naming convention (project-aware handoffs)
+
+When writing handoffs to Pi (or to any future reviewer), prefix output
+files with the project name so they group correctly in `/tmp`:
+
+- `/tmp/telewa-round{N}-{topic}.md` — handoffs from Hermes
+- `/tmp/telewa-pi-round{N}-{topic}.md` — verdicts/follow-ups from Pi
+
+Convention applies to ALL files touched in the telewa workflow. Other
+projects (bitrix, tailwindcss-probe, autogate) keep their own prefixes.

@@ -89,3 +89,15 @@ describe('sanitizeMtcuteError', () => {
     expect(sanitizeMtcuteError(raw)).toBe('a b c d')
   })
 })
+
+describe('MtcuteTelegramAdapter.getClient', () => {
+  const validHash = 'a'.repeat(32)
+
+  it('throws with a stable message before sendCode() is called (Pi O1)', () => {
+    // Story 3: providers receive a thunk over getClient(). They must NOT
+    // be called before sendCode has been called (the client is lazy).
+    // This locks the invariant the wiring depends on.
+    const adapter = new MtcuteTelegramAdapter({ apiId: 12345678, apiHash: validHash })
+    expect(() => adapter.getClient()).toThrow(/MtcuteTelegramAdapter client not initialised/)
+  })
+})

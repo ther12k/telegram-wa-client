@@ -1,5 +1,6 @@
 import type { Message, SendMessageInput } from '@telewa/contracts'
 import type { MtcuteClientSurface, MtcuteMessage } from './mtcute-dialogs'
+import type { MessageProvider } from './messages'
 
 export type { MtcuteClientSurface, MtcuteMessage, MtcuteUser } from './mtcute-dialogs'
 
@@ -14,8 +15,14 @@ export type { MtcuteClientSurface, MtcuteMessage, MtcuteUser } from './mtcute-di
  * provider is only invoked when the user is authenticated (the routes
  * gate on it).
  */
-export class MtcuteMessageProvider {
-  constructor(private readonly client: MtcuteClientSurface) {}
+export class MtcuteMessageProvider implements MessageProvider {
+  /**
+   * Thunk-based constructor — see MtcuteDialogProvider for rationale.
+   * Resolves the live MtcuteClientSurface on every call, so the
+   * adapter's lazy-init + logout-recreate lifecycle is transparent.
+   * Story 3 (round 9 plan). See apps/server/src/app.ts:81-82.
+   */
+  constructor(private readonly client: () => MtcuteClientSurface) {}
 
   // MessageProvider contract surface:
   //   setAuthenticated, setMessageListener — the surrounding wiring
@@ -41,7 +48,7 @@ export class MtcuteMessageProvider {
     const limit = options?.limit ?? 50
     const offsetId = options?.cursor ? Number(options.cursor) : undefined
 
-    const fetched = await this.client.getHistory(peer, {
+    const fetched = await this.client().getHistory(peer, {
       limit,
       ...(offsetId && Number.isFinite(offsetId) ? { offsetId } : {}),
     })
@@ -64,7 +71,7 @@ export class MtcuteMessageProvider {
       throw err
     }
 
-    const mt = await this.client.sendText(peer, input.text, {
+    const mt = await this.client().sendText(peer, input.text, {
       ...(input.replyTo ? { replyTo: Number(input.replyTo) } : {}),
     })
     const mapped = mapMessage(mt)
@@ -79,13 +86,13 @@ export class MtcuteMessageProvider {
   async markRead(chatId: string): Promise<void> {
     const peer = parseChatId(chatId)
     if (peer === null) return
-    await this.client.readHistory(peer)
+    await this.client().readHistory(peer)
   }
 
   async searchMessages(query: string): Promise<Message[]> {
     const cleanQ = query.trim()
     if (!cleanQ) return []
-    const found = await this.client.searchGlobal({ q: cleanQ, limit: 50 })
+    const found = await this.client().searchGlobal({ q: cleanQ, limit: 50 })
     return found.map(mapMessage).filter(isMessage)
   }
 }
