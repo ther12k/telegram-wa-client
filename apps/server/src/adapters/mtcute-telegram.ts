@@ -5,6 +5,30 @@ import { unlink } from 'node:fs/promises'
 import type { TelegramAdapter } from './telegram'
 
 /**
+ * Encode a Uint8Array as base64 (standard, no URL-safe variant).
+ * Telegram expects the QR token in `tg://login?token=<base64>` where the
+ * base64 is the standard RFC 4648 alphabet. Node Buffer.toString('base64')
+ * is the cleanest path; falls back to a manual loop in environments without
+ * Buffer (Bun has both).
+ */
+function bytesToBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64')
+  }
+  // Manual base64 (kept tiny — Bun always has Buffer above, but the
+  // fallback keeps the code portable).
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    // bytes[i] is `number | undefined` under noUncheckedIndexedAccess;
+    // the loop bound guarantees it's defined.
+    const b = bytes[i] as number
+    binary += String.fromCharCode(b)
+  }
+  // btoa exists in Bun + Node 16+
+  return btoa(binary)
+}
+
+/**
  * Sanitize error messages before they leave this module.
  * Strips phone numbers, hex hashes, session file paths, and any api_hash.
  * Returns a short, single-line message safe to return to HTTP clients and to log.
@@ -60,6 +84,14 @@ export class MtcuteTelegramAdapter implements TelegramAdapter {
     resolve: (password: string) => void
     reject: (err: Error) => void
   }
+
+  // QR login state (Story 3.2). Background polling loop waits for the user
+  // to scan the qrCodeUrl with their phone and confirm. The raw token bytes
+  // are kept here (NOT exposed via AuthState) so the poll can call
+  // auth.acceptLoginToken with the same bytes that auth.exportLoginToken
+  // returned. qrCodeUrl is base64-encoded and safe to expose.
+  private qrToken?: { token: Uint8Array; expiresAt: number }
+  private qrPollAbort?: AbortController
 
   constructor(private readonly options: MtcuteAdapterOptions) {
     if (!options.apiId || !options.apiId.toString().match(/^\d{1,10}$/)) {
@@ -193,19 +225,173 @@ export class MtcuteTelegramAdapter implements TelegramAdapter {
   }
 
   async startQrLogin(): Promise<AuthState> {
-    // QR login for user accounts is supported by mtcute via a separate flow
-    // (client.exportLoginToken / client.acceptLoginToken). Implementing it
-    // requires storing an in-memory token, polling for scan confirmation,
-    // and rendering the tg://login URI. Deferred until needed; the auth UI
-    // currently exposes the phone-code path only.
-    return {
-      status: 'unauthenticated',
-      error: 'QR login not yet implemented in MtcuteTelegramAdapter',
+    // Story 3.2 — real QR login via Telegram's official flow.
+    //
+    // Flow (https://corefork.telegram.org/api/qr-login):
+    //   1. Call auth.exportLoginToken with our apiId/apiHash and an empty
+    //      exceptIds list. Server returns a Uint8Array token + expires.
+    //   2. Encode the token as base64 and expose it as
+    //      `tg://login?token=<base64>` (this is the "deep link" the QR
+    //      code encodes; phones with Telegram installed recognize the
+    //      scheme and open the confirmation prompt).
+    //   3. Poll auth.acceptLoginToken in the background. Returns one of:
+    //         - loginTokenSuccess → user is authenticated, stop polling
+    //         - loginToken (not yet scanned) → wait, then poll again
+    //         - error → log + stop polling, surface to caller
+    //   4. On token expiry (or any error), reset to unauthenticated so
+    //      the user can re-trigger via the UI.
+    //
+    // DC migration (loginTokenMigrateTo response) is rare; we log and
+    // surface as an error. Re-implementing across DCs is non-trivial and
+    // not blocking v0.3.2 — tracked in Known sharp edges.
+
+    // Cancel any in-flight QR poll from a previous attempt.
+    this.cancelQrPoll()
+
+    const client = this.ensureClient()
+
+    let result: unknown
+    try {
+      // The mtcute client surface (see mtcute-dialogs.ts) types .call()
+      // as `(method: string, params) => Promise<T>`. The raw TelegramClient
+      // types it as an `RpcMethod` discriminator — strict, and a pain for
+      // one-off TL calls like auth.exportLoginToken. Cast through `any`
+      // for these auth.* primitives (same approach mtcute-dialogs uses
+      // via the surface).
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      result = await (client as any).call('auth.exportLoginToken', {
+        apiId: this.options.apiId,
+        apiHash: this.options.apiHash,
+        exceptIds: [],
+      })
+    } catch (err) {
+      return {
+        status: this.status,
+        error: `Failed to export QR token: ${sanitizeMtcuteError(err)}`,
+      }
     }
+
+    // Type-narrow the result. mtcute's .call() returns `unknown`; we
+    // shape-check on the discriminator field `_`.
+    const tag = (result as { _: string } | null | undefined)?._
+    if (tag === 'auth.loginTokenSuccess') {
+      // Shouldn't happen on a fresh, unauthenticated client — but if it
+      // does (e.g. session DB had a cached auth_key), surface success.
+      this.status = 'authenticated'
+      await this.emit()
+      return { status: 'authenticated' }
+    }
+    if (tag === 'auth.loginTokenMigrateTo') {
+      // DC migration needed — not implemented in v0.3.2.
+      return {
+        status: 'unauthenticated',
+        error: 'QR login requires a DC migration which is not yet supported',
+      }
+    }
+    if (tag !== 'auth.loginToken') {
+      return {
+        status: 'unauthenticated',
+        error: `Unexpected auth.exportLoginToken response: ${tag}`,
+      }
+    }
+
+    const token = (result as { token: Uint8Array }).token
+    const expires = (result as { expires: number }).expires
+    const expiresAtMs = expires * 1000
+
+    // Persist for the background poll. The raw token bytes are never
+    // exposed via AuthState — only the base64-encoded qrCodeUrl.
+    this.qrToken = { token, expiresAt: expiresAtMs }
+
+    // Convert to base64 in a Bun-friendly way. toBase64() works on
+    // Uint8Array in Bun; falls back to btoa + fromCharCode in Node.
+    const base64 = bytesToBase64(token)
+    const qrCodeUrl = `tg://login?token=${base64}`
+
+    this.status = 'requires_qr'
+    const state: AuthState = { status: 'requires_qr', qrCodeUrl }
+    await this.emit()
+
+    // Start background polling. We don't await it — the caller wants
+    // the QR URL immediately.
+    this.startQrPoll(client).catch((err) => {
+      console.warn('QR poll loop crashed (sanitized):', sanitizeMtcuteError(err))
+    })
+
+    return state
+  }
+
+  private async startQrPoll(client: TelegramClient): Promise<void> {
+    if (!this.qrToken) return
+    const pollIntervalMs = 2000
+    this.qrPollAbort = new AbortController()
+    const signal = this.qrPollAbort.signal
+
+    while (this.qrToken && !signal.aborted) {
+      // Check expiry before each poll. Telegram's QR tokens typically
+      // live for ~30s; we don't poll past the server's deadline.
+      if (Date.now() >= this.qrToken.expiresAt) {
+        this.qrToken = undefined
+        this.status = 'unauthenticated'
+        await this.emit()
+        return
+      }
+
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await (client as any).call('auth.acceptLoginToken', {
+          token: this.qrToken.token,
+        })
+        const tag = (result as { _: string } | null | undefined)?._
+
+        if (tag === 'auth.loginTokenSuccess') {
+          // User scanned and confirmed — authenticated.
+          this.qrToken = undefined
+          this.status = 'authenticated'
+          await this.emit()
+          return
+        }
+        // auth.loginToken (not yet scanned) → wait and retry
+        // auth.loginTokenMigrateTo → also rare; treat as wait
+        // Any other tag → log and continue polling
+      } catch (err) {
+        // TRANSIENT errors (network blips, expired token mid-poll) are
+        // logged + skipped. The expiry check at the top of the loop
+        // handles true expiry. A persistent error will hit the same
+        // exception every poll and get logged repeatedly; an operator
+        // should restart the container.
+        console.warn('auth.acceptLoginToken error (sanitized):', sanitizeMtcuteError(err))
+      }
+
+      // Wait between polls, but abort promptly on cancellation.
+      if (signal.aborted) return
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, pollIntervalMs)
+        signal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(t)
+            resolve()
+          },
+          { once: true },
+        )
+      })
+    }
+  }
+
+  private cancelQrPoll(): void {
+    if (this.qrPollAbort) {
+      this.qrPollAbort.abort()
+      this.qrPollAbort = undefined
+    }
+    this.qrToken = undefined
   }
 
   async logout(): Promise<void> {
     this.rejectPending(new Error('logout called'))
+    // Story 3.2: also cancel any in-flight QR poll so the next login
+    // attempt doesn't race with the old loop.
+    this.cancelQrPoll()
     if (this.client) {
       try {
         // 0.8.0 API: client.close() shuts down the network connection.
@@ -253,5 +439,9 @@ export class MtcuteTelegramAdapter implements TelegramAdapter {
       this.pendingPassword.reject(reason)
       this.pendingPassword = undefined
     }
+    // Story 3.2: starting a phone-code login while a QR poll is in flight
+    // would leave two concurrent auth paths. Cancel QR so the user only
+    // gets the phone flow.
+    this.cancelQrPoll()
   }
 }
