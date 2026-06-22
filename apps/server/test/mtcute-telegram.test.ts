@@ -1,5 +1,54 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeMtcuteError } from '../src/adapters/mtcute-telegram'
+import { MtcuteTelegramAdapter, sanitizeMtcuteError } from '../src/adapters/mtcute-telegram'
+
+describe('MtcuteTelegramAdapter constructor validation', () => {
+  const validHash = 'a'.repeat(32)
+  it('throws when apiId is missing (0)', () => {
+    expect(() => new MtcuteTelegramAdapter({ apiId: 0, apiHash: validHash })).toThrow(
+      /invalid TELEGRAM_API_ID/,
+    )
+  })
+
+  it('throws when apiId is negative', () => {
+    expect(() => new MtcuteTelegramAdapter({ apiId: -1, apiHash: validHash })).toThrow(
+      /invalid TELEGRAM_API_ID/,
+    )
+  })
+
+  it('throws when apiId is not an integer', () => {
+    expect(() => new MtcuteTelegramAdapter({ apiId: 1.5, apiHash: validHash })).toThrow(
+      /invalid TELEGRAM_API_ID/,
+    )
+  })
+
+  it('throws when apiId has too many digits', () => {
+    expect(() => new MtcuteTelegramAdapter({ apiId: 12345678901, apiHash: validHash })).toThrow(
+      /invalid TELEGRAM_API_ID/,
+    )
+  })
+
+  it('throws when apiHash is empty', () => {
+    expect(() => new MtcuteTelegramAdapter({ apiId: 12345, apiHash: '' })).toThrow(
+      /invalid TELEGRAM_API_HASH/,
+    )
+  })
+
+  it('throws when apiHash is too short', () => {
+    expect(() => new MtcuteTelegramAdapter({ apiId: 12345, apiHash: 'short' })).toThrow(
+      /invalid TELEGRAM_API_HASH/,
+    )
+  })
+
+  it('throws when apiHash has non-hex chars', () => {
+    expect(() => new MtcuteTelegramAdapter({ apiId: 12345, apiHash: 'z'.repeat(32) })).toThrow(
+      /invalid TELEGRAM_API_HASH/,
+    )
+  })
+
+  it('accepts a valid apiId and apiHash', () => {
+    expect(() => new MtcuteTelegramAdapter({ apiId: 12345678, apiHash: validHash })).not.toThrow()
+  })
+})
 
 describe('sanitizeMtcuteError', () => {
   it('replaces long phone-like digit runs with [phone]', () => {

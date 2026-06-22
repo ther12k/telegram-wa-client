@@ -20,11 +20,29 @@ export const app = new Hono<Bindings>()
 
 // Adapter selection: real Telegram if creds are present, fake otherwise.
 // Production must have either real creds OR DEMO_MODE=true (explicit opt-in).
-const apiId = Number(process.env.TELEGRAM_API_ID)
-const apiHash = process.env.TELEGRAM_API_HASH?.trim() || ''
+const rawApiId = process.env.TELEGRAM_API_ID?.trim() ?? ''
+const rawApiHash = process.env.TELEGRAM_API_HASH?.trim() ?? ''
+const apiId = Number(rawApiId)
+const apiHash = rawApiHash
 const hasRealCreds = Number.isFinite(apiId) && apiId > 0 && /^[a-f0-9]{32}$/i.test(apiHash)
 const isProduction = process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production'
 const demoMode = process.env.DEMO_MODE === 'true'
+
+// Ops signal: if TELEGRAM_API_ID is set but non-numeric, the validator above
+// falls through to fake mode silently. Surface that as a distinct error so
+// the misconfiguration doesn't ship to prod unnoticed.
+if (rawApiId !== '' && !Number.isFinite(apiId)) {
+  console.error(
+    `CONFIG ERROR: TELEGRAM_API_ID is set to "${sanitizeMtcuteError(rawApiId)}" but is not a valid positive integer. ` +
+      'Falling back to FakeTelegramAdapter. Fix the env var to enable the real adapter.',
+  )
+}
+if (rawApiHash !== '' && !/^[a-f0-9]{32}$/i.test(apiHash)) {
+  console.error(
+    'CONFIG ERROR: TELEGRAM_API_HASH is set but is not a 32-char hex string. ' +
+      'Falling back to FakeTelegramAdapter. Fix the env var to enable the real adapter.',
+  )
+}
 
 if (isProduction && !hasRealCreds && !demoMode) {
   console.error(

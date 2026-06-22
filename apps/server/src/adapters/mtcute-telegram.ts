@@ -1,6 +1,7 @@
 import type { AuthState } from '@telewa/contracts'
 import { TelegramClient } from '@mtcute/node'
 import { SqliteStorage } from '@mtcute/sqlite'
+import { unlink } from 'node:fs/promises'
 import type { TelegramAdapter } from './telegram'
 
 /**
@@ -188,9 +189,6 @@ export class MtcuteTelegramAdapter implements TelegramAdapter {
     if (this.client) {
       try {
         // 0.8.0 API: client.close() shuts down the network connection.
-        // The SQLite session DB remains on disk; the next sendCode() with the
-        // same phone will resume from it. For a "forget me" flow, also
-        // unlink the DB file via fs.unlink() on the sessionDbPath.
         await this.client.close()
       } catch (err) {
         console.warn('mtcute close error (sanitized):', sanitizeMtcuteError(err))
@@ -200,7 +198,30 @@ export class MtcuteTelegramAdapter implements TelegramAdapter {
     this.status = 'unauthenticated'
     this.phoneNumber = undefined
     this.startPromise = undefined
+
+    // Destroy the persisted session so "logout" is a real logout, not a
+    // resume-on-next-login. The SQLite session DB contains the MTProto
+    // auth_key — leaving it on disk means the next sendCode(samePhone)
+    // resumes silently without re-entering credentials.
+    await this.destroySessionDb()
+
     await this.emit()
+  }
+
+  private async destroySessionDb(): Promise<void> {
+    const path = this.options.sessionDbPath ?? './telewa-session/session.db'
+    // SQLite WAL mode produces -wal and -shm sidecar files alongside the main DB.
+    const paths = [path, `${path}-wal`, `${path}-shm`]
+    for (const p of paths) {
+      try {
+        await unlink(p)
+      } catch (err) {
+        // ENOENT is fine — already gone. Anything else gets a sanitized warn.
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn('session db unlink error (sanitized):', sanitizeMtcuteError(err))
+        }
+      }
+    }
   }
 
   private rejectPending(reason: Error): void {
