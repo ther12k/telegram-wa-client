@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { demoSendSchema } from '@telewa/contracts'
 import { Hono } from 'hono'
 import type { Context } from 'hono'
@@ -234,6 +237,91 @@ app.post('/api/demo/messages', async (c) => {
     201,
   )
 })
+
+// ────────────────────────────────────────────────────────────────────────────
+// Static SPA serving (Story 3.1)
+//
+// The web build is shipped in the Docker image at apps/web/dist. In dev mode
+// the build also lives at apps/web/dist (workspace layout). The API server
+// serves it so a single public URL can host both the API and the SPA.
+//
+// Routing:
+//   /api/*           → handled above, never reaches here
+//   /health/*        → handled above, never reaches here
+//   GET /assets/*    → stream the asset file from web/dist/assets/*
+//   GET /* (other)   → serve web/dist/index.html (SPA fallback for client
+//                      routing; no API path falls through to this)
+//
+// If web/dist does not exist (e.g. bare clone without web build), the
+// middleware silently no-ops and the server stays API-only.
+// ────────────────────────────────────────────────────────────────────────────
+
+function resolveWebDist(): string | null {
+  // Try the typical workspace-relative paths. Order matters: production
+  // (Docker WORKDIR=/app) uses "apps/web/dist"; dev (CWD=apps/server) uses
+  // "../web/dist"; tests sometimes use the dist after the server build.
+  const candidates = [
+    // From project root (Docker WORKDIR / production / monorepo root runs)
+    resolve(process.cwd(), 'apps/web/dist'),
+    // From apps/server (bun --cwd apps/server or `bun run dev`)
+    resolve(process.cwd(), '../web/dist'),
+    // From this compiled file (apps/server/dist/index.js in production)
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../apps/web/dist'),
+  ]
+  for (const p of candidates) {
+    if (existsSync(join(p, 'index.html'))) return p
+  }
+  return null
+}
+
+const webDist = resolveWebDist()
+
+if (webDist) {
+  const indexHtmlPath = join(webDist, 'index.html')
+
+  // Stream a file from webDist if it exists (assets, favicon, etc.).
+  app.get('/assets/*', async (c) => {
+    const reqPath = c.req.path.replace(/^\/assets\//, '')
+    const filePath = join(webDist, 'assets', reqPath)
+    const file = Bun.file(filePath)
+    if (!(await file.exists())) {
+      return c.notFound()
+    }
+    const ct = file.type || 'application/octet-stream'
+    // Cache aggressively — assets are content-hashed by Vite.
+    // Headers are set on the Response directly because c.header() does
+    // not always propagate to a hand-built Response.
+    return new Response(file, {
+      status: 200,
+      headers: {
+        'Content-Type': ct,
+        'Cache-Control': 'public, max-age=31536000, immutable',
+      },
+    })
+  })
+
+  // SPA fallback: anything that isn't /api/* or /health/* gets index.html.
+  // Registered last so all real routes win first.
+  app.get('*', async (c) => {
+    const file = Bun.file(indexHtmlPath)
+    if (!(await file.exists())) {
+      return c.notFound()
+    }
+    c.header('Cache-Control', 'no-cache')
+    return c.html(await file.text())
+  })
+
+  console.info(
+    `[telewa] serving SPA from ${webDist} ` +
+      `(assets: /assets/* → ${join(webDist, 'assets')}, ` +
+      `fallback: * → ${indexHtmlPath})`,
+  )
+} else {
+  console.warn(
+    '[telewa] no web/dist found — running in API-only mode. ' +
+      'Build apps/web (bun run --filter @telewa/web build) to enable the SPA.',
+  )
+}
 
 app.onError((_error, c) =>
   c.json(
