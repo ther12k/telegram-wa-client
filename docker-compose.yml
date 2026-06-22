@@ -5,6 +5,12 @@ services:
       APP_ENV: production
       PORT: 3001
       DEMO_MODE: 'true'
+      # Real Telegram (MTProto) — leave blank to fall back to FakeTelegramAdapter
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID:-}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH:-}
+      # Note: SESSION_ENCRYPTION_KEY intentionally removed (2026-06-22).
+      # mtcute 0.8.0 SqliteStorage does not support an at-rest encryption key.
+      # Re-add the env var when mtcute exposes the knob (tracked in REAL-TELEGRAM-PLAN.md).
     ports:
       - '3001:3001'
     healthcheck:

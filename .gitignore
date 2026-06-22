@@ -7,4 +7,12 @@ coverage/
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite-journal
 .DS_Store
+
+# Telegram session storage (Pi concern: never commit session DBs or keys)
+telewa-session/
+sessions/
+*.session
+*.session-journal
