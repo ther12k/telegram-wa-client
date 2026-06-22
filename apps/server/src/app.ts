@@ -168,42 +168,40 @@ app.get('/health/live', (c) => ok(c, { status: 'live', timestamp: new Date().toI
 app.get('/health/ready', (c) =>
   ok(c, {
     status: 'ready',
-    database: 'phase-1-pending',
-    telegram: 'not-configured',
+    database: 'sqlite',
+    telegram: hasRealCreds ? 'configured' : demoMode ? 'fake-demo-mode' : 'not-configured',
     ui: 'integrated',
-    demoMode: true,
+    demoMode,
   }),
 )
 app.get('/api/version', (c) =>
   ok(c, {
     name: 'telegram-wa-web',
-    version: '0.2.0',
-    phase: 'Phase 0 — UI integrated foundation',
-    demoMode: true,
+    version: '0.3.2',
+    phase: 'Real Telegram integration in progress (Stories 1–3.2 shipped)',
+    demoMode,
     uiIntegration: 'uploaded-whatsapp-inspired-design' as const,
   }),
 )
 app.get('/api/project-state', (c) =>
   ok(c, {
-    activePhase: 'Phase 0 — UI integrated foundation',
-    status: 'validated starter with uploaded UI/UX integrated',
-    uiStatus: 'The uploaded onboarding and messenger design is now the primary frontend.',
+    activePhase: 'Real Telegram integration',
+    status:
+      'mtcute adapter + dialog/message providers shipped (PRs #3, #4, #5, #6, #7). ' +
+      'Real auth works against Telegram with TELEGRAM_API_ID + TELEGRAM_API_HASH.',
+    uiStatus: 'SPA served from apps/web/dist (Story 3.1) and is the primary frontend.',
     implemented: [
-      'Uploaded UI/UX moved into apps/web',
-      'Hono API and health foundation',
-      'Shared runtime contracts',
-      'Frontend API client and server connectivity indicator',
-      'Server-acknowledged demo message send',
-      'CI, Docker, PRD, AGENT.md, project state',
+      'Fake + mtcute TelegramAdapter (Story 1, PR #3)',
+      'MtcuteDialogProvider + MtcuteMessageProvider (Story 2, PR #4)',
+      'app.ts wiring based on hasRealCreds (Story 3, PR #5)',
+      'SPA static serving from apps/web/dist (Story 3.1, PR #6)',
+      'Real QR login via auth.exportLoginToken + acceptLoginToken poll (Story 3.2, PR #7)',
     ],
-    mocked: [
-      'Telegram authentication',
-      'Telegram dialogs/messages/media',
-      'SQLite encrypted session persistence',
-      'Telegram-native read and delivery states',
+    inProgress: [
+      'parseChatId negative-ID fix + TelegramAdapter.subscribe interface fix (PR #9)',
+      'Version sync to 0.3.2',
     ],
-    nextTask:
-      'Implement Phase 1 auth state machine and encrypted SQLite session storage behind the existing onboarding UI.',
+    nextTask: 'HTTP auth ADR (0001) before Story 7 MtcuteRealtimeProvider.',
   }),
 )
 app.post('/api/demo/messages', async (c) => {
