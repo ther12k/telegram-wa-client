@@ -305,7 +305,7 @@ function computeInitials(name: string): string {
 
 function parseChatId(chatId: string): number | null {
   const n = Number(chatId)
-  if (!Number.isFinite(n) || n <= 0) return null
+  if (!Number.isFinite(n) || n === 0) return null
   return n
 }
 

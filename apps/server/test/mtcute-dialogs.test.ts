@@ -253,4 +253,30 @@ describe('MtcuteDialogProvider', () => {
       expect(spy).toHaveBeenCalledWith(123, { justClear: false, revoke: true })
     })
   })
+
+  describe('parseChatId negative IDs (regression: groups/channels)', () => {
+    it('accepts negative chatId for groups/supergroups/channels', async () => {
+      const client = new FakeMtcuteClient()
+      const spy = vi.spyOn(client, 'deleteHistory')
+      const p = new MtcuteDialogProvider(() => client)
+      // Real Telegram supergroup IDs are negative: -1001234567890
+      expect(await p.deleteDialog('-1001234567890')).toBe(true)
+      expect(spy).toHaveBeenCalledWith(-1001234567890, {
+        justClear: false,
+        revoke: true,
+      })
+    })
+
+    it('rejects zero chatId', async () => {
+      const client = new FakeMtcuteClient()
+      const p = new MtcuteDialogProvider(() => client)
+      expect(await p.deleteDialog('0')).toBe(false)
+    })
+
+    it('rejects non-numeric chatId', async () => {
+      const client = new FakeMtcuteClient()
+      const p = new MtcuteDialogProvider(() => client)
+      expect(await p.deleteDialog('abc')).toBe(false)
+    })
+  })
 })
