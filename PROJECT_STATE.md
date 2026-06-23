@@ -1,8 +1,8 @@
 # Project State
 
-**Updated:** 2026-06-20  
-**Version:** 0.2.0  
-**Active phase:** Complete (Phases 1-8)  
+**Updated:** 2026-06-22
+**Version:** 0.3.2
+**Active phase:** Real Telegram integration (Stories 1–3.2 shipped; bugfix + version sync PRs pending)
 **Status:** Fully implemented, verified, and hardened.
 
 ## Phase status
