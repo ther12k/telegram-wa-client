@@ -23,6 +23,7 @@ import { createSearchRouter } from './routes/search'
 import { RealtimeBus } from './realtime/bus'
 import { createRealtimeRouter } from './routes/realtime'
 import { rateLimiter, securityHeaders, structuredLogger } from './hardening'
+import { requireAuth } from './middleware/auth'
 
 export type Bindings = { Variables: { requestId: string } }
 export const app = new Hono<Bindings>()
@@ -153,6 +154,8 @@ app.use('*', securityHeaders())
 app.use('*', structuredLogger())
 app.use('/api/*', rateLimiter({ windowMs: 60000, maxRequests: 200 }))
 app.use('/api/*', cors({ origin: ['http://localhost:5173'], credentials: true }))
+app.use('/api/*', requireAuth())
+app.use('/events', requireAuth())
 
 app.route('/api/auth', createAuthRouter(telegramAdapter))
 app.route('/api/dialogs', createDialogRouter(dialogProvider, isAuthenticated))
