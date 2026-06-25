@@ -1,5 +1,4 @@
-import { describe, expect, it, beforeAll } from 'vitest'
-import { env } from 'hono/adapter'
+import { describe, expect, it, beforeAll, afterAll } from 'vitest'
 import { requireAuth } from '../src/middleware/auth'
 import app from '../src/app'
 
@@ -7,6 +6,11 @@ describe('HTTP auth middleware (Story 5b)', () => {
   beforeAll(() => {
     // Set a test token for the middleware to validate against
     process.env.AUTH_TOKEN = 'test-token-32chars-or-more'
+  })
+
+  afterAll(() => {
+    // Clean up env var so it doesn't leak into other test suites in the same process
+    delete process.env.AUTH_TOKEN
   })
 
   it('returns 401 when AUTH_TOKEN is set but no Authorization header', async () => {

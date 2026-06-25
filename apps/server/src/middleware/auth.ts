@@ -15,7 +15,15 @@ import type { Context, Next } from 'hono'
  */
 export function requireAuth() {
   return async (c: Context, next: Next) => {
-    const token = c.env.AUTH_TOKEN ?? process.env.AUTH_TOKEN
+    // c.env is Hono runtime bindings (may be undefined in Node/Bun outside
+    // workers). Fall back to process.env for server-side usage.
+    const token = c.env?.AUTH_TOKEN ?? process.env.AUTH_TOKEN
+
+    // CORS preflight (OPTIONS) must pass without auth — browsers send
+    // preflight requests without Authorization headers.
+    if (c.req.method === 'OPTIONS') {
+      return next()
+    }
 
     if (!token) {
       // If AUTH_TOKEN is not configured, the endpoint is public.
@@ -46,14 +54,19 @@ export function requireAuth() {
 /**
  * Constant-time string comparison for tokens.
  * Prevents timing attacks on auth token validation.
+ *
+ * Iterates over the longer string's length so attackers cannot infer the
+ * expected token length from response time. Uses a sentinel (0) for
+ * out-of-bounds indices so the XOR still runs on every iteration.
  */
 function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false
+  const maxLen = Math.max(a.length, b.length)
+  // Non-zero if lengths differ — ensures mismatched-length tokens still fail.
+  let result = a.length ^ b.length
 
-  let result = 0
-  for (let i = 0; i < a.length; i++) {
+  for (let i = 0; i < maxLen; i++) {
     // eslint-disable-next-line no-bitwise
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
+    result |= (a.charCodeAt(i) ?? 0) ^ (b.charCodeAt(i) ?? 0)
   }
 
   return result === 0

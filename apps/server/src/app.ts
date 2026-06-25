@@ -62,6 +62,14 @@ if (isProduction && !hasRealCreds && !demoMode) {
   process.exit(1)
 }
 
+if (isProduction && !process.env.AUTH_TOKEN) {
+  console.error(
+    'FATAL: AUTH_TOKEN is not set in production. All /api/* and /events endpoints ' +
+      'are effectively public. Set AUTH_TOKEN to a strong secret before deploying.',
+  )
+  process.exit(1)
+}
+
 if (hasRealCreds) {
   console.info(
     JSON.stringify({

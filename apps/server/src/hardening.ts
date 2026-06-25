@@ -12,11 +12,15 @@ export const structuredLogger = (): MiddlewareHandler => {
     await next()
 
     const duration = performance.now() - start
+    // Redact sensitive query params (e.g. ?token= for SSE auth) to prevent
+    // credential leakage into structured logs per ADR 0001.
+    const rawUrl = c.req.url
+    const sanitizedUrl = rawUrl.replace(/([?&])token=[^&]*/gi, '$1token=REDACTED')
     const logPayload = {
       timestamp: new Date().toISOString(),
       requestId,
       method: c.req.method,
-      url: c.req.url,
+      url: sanitizedUrl,
       status: c.res.status,
       durationMs: parseFloat(duration.toFixed(2)),
       ip,
