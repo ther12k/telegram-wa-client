@@ -39,12 +39,18 @@ export function requireAuth() {
     const providedToken = bearerToken ?? queryToken ?? null
 
     if (!providedToken) {
-      return c.json({ success: false as const, error: { code: 'UNAUTHORIZED', message: 'Missing auth token' } }, 401)
+      return c.json(
+        { success: false as const, error: { code: 'UNAUTHORIZED', message: 'Missing auth token' } },
+        401,
+      )
     }
 
     // Constant-time compare to prevent timing attacks
     if (!constantTimeEqual(providedToken, token)) {
-      return c.json({ success: false as const, error: { code: 'UNAUTHORIZED', message: 'Invalid auth token' } }, 401)
+      return c.json(
+        { success: false as const, error: { code: 'UNAUTHORIZED', message: 'Invalid auth token' } },
+        401,
+      )
     }
 
     return next()
@@ -65,7 +71,6 @@ function constantTimeEqual(a: string, b: string): boolean {
   let result = a.length ^ b.length
 
   for (let i = 0; i < maxLen; i++) {
-    // eslint-disable-next-line no-bitwise
     result |= (a.charCodeAt(i) ?? 0) ^ (b.charCodeAt(i) ?? 0)
   }
 

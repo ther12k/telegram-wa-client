@@ -1,5 +1,4 @@
 import { describe, expect, it, beforeAll, afterAll } from 'vitest'
-import { requireAuth } from '../src/middleware/auth'
 import app from '../src/app'
 
 describe('HTTP auth middleware (Story 5b)', () => {
