@@ -23,6 +23,7 @@ import { createSearchRouter } from './routes/search'
 import { RealtimeBus } from './realtime/bus'
 import { createRealtimeRouter } from './routes/realtime'
 import { rateLimiter, securityHeaders, structuredLogger } from './hardening'
+import { requireAuth } from './middleware/auth'
 
 export type Bindings = { Variables: { requestId: string } }
 export const app = new Hono<Bindings>()
@@ -57,6 +58,14 @@ if (isProduction && !hasRealCreds && !demoMode) {
   console.error(
     'FATAL: production startup with no TELEGRAM_API_ID/HASH and no DEMO_MODE. ' +
       'Refusing to run with FakeTelegramAdapter in production. Set DEMO_MODE=true to override.',
+  )
+  process.exit(1)
+}
+
+if (isProduction && !process.env.AUTH_TOKEN) {
+  console.error(
+    'FATAL: AUTH_TOKEN is not set in production. All /api/* and /events endpoints ' +
+      'are effectively public. Set AUTH_TOKEN to a strong secret before deploying.',
   )
   process.exit(1)
 }
@@ -153,6 +162,8 @@ app.use('*', securityHeaders())
 app.use('*', structuredLogger())
 app.use('/api/*', rateLimiter({ windowMs: 60000, maxRequests: 200 }))
 app.use('/api/*', cors({ origin: ['http://localhost:5173'], credentials: true }))
+app.use('/api/*', requireAuth())
+app.use('/events', requireAuth())
 
 app.route('/api/auth', createAuthRouter(telegramAdapter))
 app.route('/api/dialogs', createDialogRouter(dialogProvider, isAuthenticated))
