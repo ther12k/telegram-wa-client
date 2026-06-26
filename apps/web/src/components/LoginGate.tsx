@@ -3,7 +3,7 @@ import { Lock } from 'lucide-react'
 import { useAuthToken } from '../contexts/AuthToken'
 
 export function LoginGate({ children }: { children: React.ReactNode }) {
-  const { token, setToken, isAuthenticated } = useAuthToken()
+  const { setToken, isAuthenticated } = useAuthToken()
   const [inputValue, setInputValue] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)

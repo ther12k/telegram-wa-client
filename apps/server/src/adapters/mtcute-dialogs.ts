@@ -40,11 +40,6 @@ export interface MtcuteClientSurface {
   /** Resolve a peer (id/username/phone) to its current tl.TypeInputPeer. */
   resolvePeer(peer: MtcuteInputPeerLike): Promise<TlInputPeer>
   call<T = unknown>(method: string, params: Record<string, unknown>): Promise<T>
-
-  /** Real-time update handlers (Story 7 — mtcute UpdateHandler → SSE). */
-  onNewMessage(handler: (message: MtcuteMessage) => void): void
-  onEditedMessage(handler: (message: MtcuteMessage) => void): void
-  onDeletedMessage(handler: (messageIds: number[], channelId?: number) => void): void
 }
 
 /** Mirror of mtcute's tl.TypeInputPeer — just the variants we construct. */

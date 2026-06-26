@@ -12,6 +12,10 @@ import type { MtcuteClientSurface, MtcuteMessage } from './mtcute-dialogs'
  * Thunk-based constructor (same pattern as MtcuteDialogProvider /
  * MtcuteMessageProvider): accepts a `() => MtcuteClientSurface` so the
  * adapter's lazy-init + logout-recreate lifecycle is transparent.
+ *
+ * Uses mtcute TelegramClient's EventEmitter .on/.off directly (the
+ * surface is cast through `any` for the EventEmitter methods since they
+ * are runtime-attached, not in the typed surface).
  */
 export class MtcuteRealtimeProvider {
   private cleanupFns: (() => void)[] = []
@@ -31,19 +35,15 @@ export class MtcuteRealtimeProvider {
     const surface = this.client()
     const bus = this.bus
 
-    // Helper: call `client.onXxx` and record the unsubscribe convention.
-    // mtcute 0.8 uses EventEmitter-style .on() → .off() or returns
-    // an unsubscribe function. We use the `.on()` pattern and keep
-    // a reference for removal.
-    const bind = (event: string, fn: (...args: unknown[]) => void) => {
-      // mtcute TelegramClient extends EventEmitter — .on returns the client
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(surface as any).on(event, fn)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.cleanupFns.push(() => (surface as any).off(event, fn))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const emitter = surface as any
+
+    const bind = <A extends unknown[]>(event: string, fn: (...args: A) => void) => {
+      emitter.on(event, fn)
+      this.cleanupFns.push(() => emitter.off(event, fn))
     }
 
-    bind('new_message', (msg: MtcuteMessage) => {
+    bind<[MtcuteMessage]>('new_message', (msg) => {
       const event: RealtimeEvent = {
         type: 'message.new',
         chatId: String(msg.chatId),
@@ -52,7 +52,7 @@ export class MtcuteRealtimeProvider {
       bus.publish(event)
     })
 
-    bind('edit_message', (msg: MtcuteMessage) => {
+    bind<[MtcuteMessage]>('edit_message', (msg) => {
       const event: RealtimeEvent = {
         type: 'message.update',
         chatId: String(msg.chatId),
@@ -62,18 +62,9 @@ export class MtcuteRealtimeProvider {
       bus.publish(event)
     })
 
-    bind('delete_messages', (messageIds: number[], channelId?: number) => {
-      // Deleted messages don't cleanly map to the current RealtimeEvent
-      // union (no "message.delete" type yet). Publish nothing for now
-      // — a future PR can add it. The important events (new + edit) are
-      // covered above.
-      //
-      // Tracked: add message.delete to realtimeEventSchema.
-    })
-
-    // Also register via the direct handlers (more specific than raw .on)
-    // The raw .on('new_message') above should fire for all new messages.
-    // We skip the raw onUpdate path to avoid double-firing.
+    // Delete messages are not mapped to RealtimeEvent yet.
+    // Tracked: add message.delete to realtimeEventSchema.
+    // bind<[number[], number?]>('delete_messages', (_messageIds, _channelId) => {})
   }
 
   /**
@@ -101,6 +92,7 @@ function mtcuteMessageToContract(msg: MtcuteMessage) {
     senderId: String(msg.sender?.id ?? ''),
     outbox: msg.isOutgoing ?? false,
     text,
+    kind: 'text' as const,
     sentAt: msg.date instanceof Date ? msg.date.toISOString() : new Date().toISOString(),
     status: 'sent' as const,
   }
