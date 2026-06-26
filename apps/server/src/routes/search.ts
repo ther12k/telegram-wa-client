@@ -3,6 +3,7 @@ import type { DialogProvider } from '../adapters/dialogs'
 import type { MessageProvider } from '../adapters/messages'
 import { dialogSchema, messageSchema } from '@telewa/contracts'
 import { z } from 'zod'
+import { ok, fail } from './response'
 
 const searchResultSchema = z.object({
   dialogs: z.array(dialogSchema),
@@ -19,53 +20,28 @@ export function createSearchRouter(
   const router = new Hono<{ Variables: { requestId: string } }>()
 
   router.get('/', async (c) => {
-    if (!(await isAuthenticated())) {
-      return c.json(
-        {
-          success: false as const,
-          error: { code: 'AUTH_REQUIRED', message: 'Sign in to search.', retryable: false },
-          meta: { requestId: c.get('requestId') },
-        },
-        401,
-      )
-    }
+    if (!(await isAuthenticated())) return fail(c, 'AUTH_REQUIRED', 'Sign in to search.', 401)
 
     const q = c.req.query('q') || ''
     const cleanQ = q.toLowerCase().trim()
 
-    if (!cleanQ) {
-      return c.json({
-        success: true as const,
-        data: { dialogs: [], messages: [] },
-        meta: { requestId: c.get('requestId') },
-      })
-    }
+    if (!cleanQ) return ok(c, { dialogs: [], messages: [] })
 
-    // 1. Get all dialogs & filter by title, about, initials
     const dialogList = await dialogs.listDialogs()
-    const matchedDialogs = dialogList.dialogs.filter((d) => {
-      return (
+    const matchedDialogs = dialogList.dialogs.filter(
+      (d) =>
         d.peer.title.toLowerCase().includes(cleanQ) ||
         (d.peer.about && d.peer.about.toLowerCase().includes(cleanQ)) ||
-        d.peer.initials.toLowerCase().includes(cleanQ)
-      )
-    })
+        d.peer.initials.toLowerCase().includes(cleanQ),
+    )
 
-    // 2. Search message history
     const matchedMessages = await messages.searchMessages(cleanQ)
-
-    const payload = {
+    const validated = searchResultSchema.parse({
       dialogs: matchedDialogs,
       messages: matchedMessages,
-    }
-
-    const validated = searchResultSchema.parse(payload)
-
-    return c.json({
-      success: true as const,
-      data: validated,
-      meta: { requestId: c.get('requestId') },
     })
+
+    return ok(c, validated)
   })
 
   return router
