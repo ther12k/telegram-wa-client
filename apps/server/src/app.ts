@@ -13,6 +13,7 @@ import {
   type MtcuteClientSurface,
 } from './adapters/mtcute-dialogs'
 import { MtcuteMessageProvider } from './adapters/mtcute-messages'
+import { MtcuteRealtimeProvider } from './adapters/mtcute-realtime'
 import { FixtureDialogProvider } from './adapters/dialogs'
 import { InMemoryMessageProvider } from './adapters/messages'
 import { createAuthRouter } from './routes/auth'
@@ -138,6 +139,13 @@ export const messageProvider = hasRealCreds
 export const mediaStore = new InMemoryMediaStore()
 export const realtimeBus = new RealtimeBus()
 
+// Mtcute real-time provider: registers Telegram update handlers → SSE events.
+// Only constructed when real creds are present; the thunk pattern defers the
+// client access until start() is called (which happens after auth confirms).
+export const realtimeProvider = hasRealCreds
+  ? new MtcuteRealtimeProvider(getMtcuteSurface, realtimeBus)
+  : null
+
 const isAuthenticated = async () =>
   (await telegramAdapter.getAuthState()).status === 'authenticated'
 
@@ -145,6 +153,13 @@ const isAuthenticated = async () =>
 telegramAdapter.subscribe((state) => {
   dialogProvider.setAuthState(state.status)
   messageProvider.setAuthenticated(state.status === 'authenticated')
+  // Start/stop mtcute real-time update handlers based on auth state.
+  // This avoids registering handlers before the client is ready.
+  if (state.status === 'authenticated' && realtimeProvider) {
+    realtimeProvider.start()
+  } else if (state.status !== 'authenticated' && realtimeProvider) {
+    realtimeProvider.stop()
+  }
 })
 
 // Broadcast every new message to realtime subscribers.

@@ -13,6 +13,8 @@ services:
       # Re-add the env var when mtcute exposes the knob (tracked in REAL-TELEGRAM-PLAN.md).
     ports:
       - '3001:3001'
+    volumes:
+      - ./telewa-session:/app/telewa-session
     healthcheck:
       test:
         [
