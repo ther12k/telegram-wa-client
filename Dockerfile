@@ -28,7 +28,9 @@ ENV APP_VERSION=${APP_VERSION} \
 
 # Drop privileges
 RUN groupadd --system --gid 1001 telewa \
- && useradd  --system --uid 1001 --gid telewa --no-create-home telewa
+ && useradd  --system --uid 1001 --gid telewa --no-create-home telewa \
+ && mkdir -p /app/telewa-session \
+ && chown telewa:telewa /app/telewa-session
 
 COPY --from=build --chown=telewa:telewa /app/package.json                       ./package.json
 COPY --from=build --chown=telewa:telewa /app/node_modules                       ./node_modules
