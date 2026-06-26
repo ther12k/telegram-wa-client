@@ -17,21 +17,21 @@
 | 5. Media           | Completed | Media upload/download proxy, kind derivation, dynamic file layout bubbles, upload spinners.                                     |
 | 6. V1 interactions | Completed | Global search (peers + message content), contact action menus, settings.                                                        |
 | 7. Hardening       | Completed | CSP headers, rate-limiting, structured JSON access logs, bearer token auth middleware (Story 5b), frontend login gate.          |
-| 8. Release         | Completed | Multi-stage Docker image, deploy.sh build/push/ssh runner, RUNBOOK.md ops guide, Docker volume mount (Story 6).                |
+| 8. Release         | Completed | Multi-stage Docker image, deploy.sh build/push/ssh runner, RUNBOOK.md ops guide, Docker volume mount (Story 6).                 |
 
 ## Real Telegram integration (stories)
 
-| Story | Description                        | Status    |
-| ----- | ---------------------------------- | --------- |
-| 1     | mtcute deps + TelegramAdapter      | Shipped   |
-| 2     | MtcuteDialogProvider + Message     | Shipped   |
-| 3     | Wiring in app.ts                   | Shipped   |
-| 3.1   | SPA static fallback                | Shipped   |
-| 3.2   | QR login                           | Shipped   |
-| 5b    | Bearer token auth middleware       | Shipped   |
-| 5b UI | Frontend login gate                | Shipped   |
-| 6     | Docker volume mount                | Shipped   |
-| 7     | MtcuteRealtimeProvider (SSE)       | Shipped   |
+| Story | Description                    | Status  |
+| ----- | ------------------------------ | ------- |
+| 1     | mtcute deps + TelegramAdapter  | Shipped |
+| 2     | MtcuteDialogProvider + Message | Shipped |
+| 3     | Wiring in app.ts               | Shipped |
+| 3.1   | SPA static fallback            | Shipped |
+| 3.2   | QR login                       | Shipped |
+| 5b    | Bearer token auth middleware   | Shipped |
+| 5b UI | Frontend login gate            | Shipped |
+| 6     | Docker volume mount            | Shipped |
+| 7     | MtcuteRealtimeProvider (SSE)   | Shipped |
 
 ## Next slices (planned)
 
