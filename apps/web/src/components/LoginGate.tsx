@@ -27,7 +27,7 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
       // Verify token by calling a protected endpoint
       const response = await fetch('/api/dialogs', {
         headers: {
-          'Authorization': 'Bearer ' + inputValue.trim(),
+          Authorization: 'Bearer ' + inputValue.trim(),
           'Content-Type': 'application/json',
         },
       })
@@ -64,7 +64,10 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="token" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+              <label
+                htmlFor="token"
+                className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2"
+              >
                 Bearer Token
               </label>
               <input
@@ -96,7 +99,8 @@ export function LoginGate({ children }: { children: React.ReactNode }) {
 
           <div className="mt-6 text-center">
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Token is stored in your browser session. You'll need to sign in again when the session expires.
+              Token is stored in your browser session. You'll need to sign in again when the session
+              expires.
             </p>
           </div>
         </div>
