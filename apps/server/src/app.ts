@@ -3,7 +3,6 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { demoSendSchema } from '@telewa/contracts'
 import { Hono } from 'hono'
-import type { Context } from 'hono'
 import { cors } from 'hono/cors'
 import { FakeTelegramAdapter } from './adapters/fake-telegram'
 import { MtcuteTelegramAdapter, sanitizeMtcuteError } from './adapters/mtcute-telegram'
@@ -25,6 +24,7 @@ import { RealtimeBus } from './realtime/bus'
 import { createRealtimeRouter } from './routes/realtime'
 import { rateLimiter, securityHeaders, structuredLogger } from './hardening'
 import { requireAuth } from './middleware/auth'
+import { ok } from './routes/response'
 
 export type Bindings = { Variables: { requestId: string } }
 export const app = new Hono<Bindings>()
@@ -187,9 +187,6 @@ app.route('/api/media', createMediaRouter(mediaStore, isAuthenticated))
 app.route('/api/search', createSearchRouter(dialogProvider, messageProvider, isAuthenticated))
 app.route('/api/realtime', createRealtimeRouter(realtimeBus, isAuthenticated))
 
-const ok = <T>(c: Context<Bindings>, data: T, status: 200 | 201 = 200) =>
-  c.json({ success: true as const, data, meta: { requestId: c.get('requestId') } }, status)
-
 app.get('/health/live', (c) => ok(c, { status: 'live', timestamp: new Date().toISOString() }))
 app.get('/health/ready', (c) =>
   ok(c, {
@@ -203,8 +200,8 @@ app.get('/health/ready', (c) =>
 app.get('/api/version', (c) =>
   ok(c, {
     name: 'telegram-wa-web',
-    version: '0.3.2',
-    phase: 'Real Telegram integration in progress (Stories 1–3.2 shipped)',
+    version: '0.4.0',
+    phase: 'Real Telegram integration complete (v0.4.0) — Stories 1–7 shipped',
     demoMode,
     uiIntegration: 'uploaded-whatsapp-inspired-design' as const,
   }),
