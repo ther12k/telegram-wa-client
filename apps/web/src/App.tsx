@@ -4,12 +4,22 @@ import { api } from './api'
 import Onboarding from './components/Onboarding'
 import Messenger from './components/Messenger'
 import { TopBanner, StateOverlay } from './components/Panels'
+import { AuthTokenProvider } from './contexts/AuthToken'
+import { LoginGate } from './components/LoginGate'
 
 type Stage = 'onboarding' | 'app'
 type Network = 'online' | 'offline' | 'reconnecting'
 type Overlay = 'loading' | 'empty' | 'error' | 'offline' | 'reconnecting' | null
 
 export default function App() {
+  return (
+    <AuthTokenProvider>
+      <AppInner />
+    </AuthTokenProvider>
+  )
+}
+
+function AppInner() {
   const [stage, setStage] = useState<Stage>('onboarding')
   const [dark, setDark] = useState(false)
   const [network, setNetwork] = useState<Network>('online')
@@ -96,6 +106,7 @@ export default function App() {
     setStage('onboarding')
     try {
       sessionStorage.removeItem('tt_stage')
+      sessionStorage.removeItem('auth_token')
     } catch {
       // ignored
     }
@@ -119,8 +130,9 @@ export default function App() {
   return (
     <div className={dark ? 'dark' : ''}>
       <div className="h-screen w-screen overflow-hidden bg-slate-100 dark:bg-[#0b141a] text-slate-900 dark:text-slate-100 flex flex-col">
-        {stage === 'app' && <TopBanner state={network} />}
-        <div className="fixed top-3 right-3 z-[70] rounded-full bg-white/90 dark:bg-[#202c33]/95 px-3 py-1.5 text-[11px] font-semibold shadow-lg ring-1 ring-slate-200 dark:ring-white/10">
+        <LoginGate>
+          {stage === 'app' && <TopBanner state={network} />}
+          <div className="fixed top-3 right-3 z-[70] rounded-full bg-white/90 dark:bg-[#202c33]/95 px-3 py-1.5 text-[11px] font-semibold shadow-lg ring-1 ring-slate-200 dark:ring-white/10">
           <span className={serverOnline ? 'text-emerald-600' : 'text-rose-500'}>●</span>{' '}
           {serverOnline ? 'API connected' : 'API offline'}
           {projectState ? (
@@ -182,6 +194,7 @@ export default function App() {
             </div>
           )}
         </div>
+        </LoginGate>
       </div>
     </div>
   )

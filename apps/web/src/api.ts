@@ -28,6 +28,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!(init?.body instanceof FormData)) {
     headers['content-type'] = 'application/json'
   }
+
+  // Inject bearer token from sessionStorage if available
+  const token = typeof window !== 'undefined' ? sessionStorage.getItem('auth_token') : null
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
+
   const response = await fetch(path, {
     ...init,
     headers: { ...headers, ...init?.headers },
